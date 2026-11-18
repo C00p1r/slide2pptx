@@ -38,6 +38,10 @@ Newest entries at the top. Format: **Done** / **Issues & fixes** / **Next**.
 - *Cards much taller than their text.* **Fix:** in single-row card layouts,
   shrink all cards to the tallest content 60% of the time.
 
+- *NotebookLM only exports PDF or PPTX.* The PPTX holds each slide as one
+  full-size picture. **Fix:** `tools/extract_slides.py` pulls those pictures out at
+  original resolution and starts a tagging CSV.
+
 **Next**
 - Push the repo and run the Colab setup notebook end to end.
 - Generate ~5k slides to Google Drive.

@@ -1,6 +1,6 @@
 # slide2pptx
 
-Convert uneditable AI-generated slides into editable .pptx files. Turn a slide **image** (for example from NotebookLM) back into an **editable PowerPoint** file.
+Convert uneditable AI-generated slides into editable .pptx files: give it a slide **image** (for example from NotebookLM) and get back an **editable PowerPoint** file.
 
 > Final project, Convolutional Neural Networks. See [PLAN.md](PLAN.md) for the plan
 > and [TRACE.md](TRACE.md) for the progress log.
@@ -34,6 +34,14 @@ python -m slidegen.generate --out data/synth --n 500 --workers 4
 python -m slidegen.visualize data/synth --n 12      # check labels -> data/synth/preview/
 ```
 Windows: run the generator in Colab or WSL. LibreOffice rendering is Linux-only here.
+
+## Real test slides (NotebookLM)
+Put the NotebookLM `.pptx` exports in a folder, then:
+```bash
+python tools/extract_slides.py path/to/pptx_folder --out data/real/images
+```
+Each slide's image is saved at full resolution, and `data/real/real_slides.csv` is
+started for tagging (language, layout, style, hard_case). `data/` is git-ignored.
 
 ## Synthetic dataset format
 ```
