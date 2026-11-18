@@ -29,8 +29,12 @@ def _measure(paras, fam, bold, size_px, width, lang, bullet):
     indent = size_px * 1.2 if bullet else 0
     lh = fonts.line_height(fam, bold, size_px)
     gap = size_px * 0.35 if len(paras) > 1 else 0
-    n_lines = [len(fonts.wrap(p, fam, bold, size_px, width - indent, lang)) for p in paras]
+    wrapped = [fonts.wrap(p, fam, bold, size_px, width - indent, lang) for p in paras]
+    n_lines = [len(w) for w in wrapped]
     h = sum(n_lines) * lh + gap * (len(paras) - 1)
+    # a single word wider than the box would be broken mid-word by PowerPoint: treat as not fitting
+    if any(fonts.text_width(line, fam, bold, size_px) > width - indent for w in wrapped for line in w):
+        h = float("inf")
     return h, n_lines
 
 
@@ -359,6 +363,66 @@ def t_iconlist(b, m):
             b.text("body", tx, ty, cx + cw - tx, cy + rh - ty)
 
 
+def _overlaps(box, placed, pad=8):
+    x, y, w, h = box
+    for px, py, pw, ph in placed:
+        if x < px + pw + pad and px < x + w + pad and y < py + ph + pad and py < y + h + pad:
+            return True
+    return False
+
+
+def t_random(b, m):
+    """Domain randomisation: element types scattered at random, no overlaps.
+
+    Not chosen by template weight; used only through --random-ratio.
+    """
+    rng, th = b.rng, b.th
+    placed = []
+    if rng.random() < 0.5:                       # keep a normal title half the time
+        y0 = _title(b, m)
+        placed.append([0, 0, W, y0 - 10])
+    else:                                        # or put it anywhere
+        w = rng.uniform(300, W - 2 * m)
+        el = make_text(rng, th, "title", rng.uniform(0, W - w), rng.uniform(0, H * 0.8), w, H * 0.3)
+        if el:
+            b.add(el)
+            placed.append(el["box"])
+    n = int(rng.integers(4, 13))
+    for _ in range(n * 6):                       # attempts
+        if len(placed) > n:
+            break
+        kind = rng.choice(["text", "text", "shape", "picture", "icon", "card"])
+        if kind == "icon":
+            size = rng.uniform(28, 120)
+            box = [rng.uniform(0, W - size), rng.uniform(0, H - size), size, size]
+            if not _overlaps(box, placed):
+                b.icon(box[0] + size / 2, box[1] + size / 2, size)
+                placed.append(box)
+            continue
+        w, h = rng.uniform(60, 600), rng.uniform(40, 360)
+        box = [rng.uniform(0, W - w), rng.uniform(0, H - h), w, h]
+        if kind == "text":
+            role = str(rng.choice(["body", "bullets", "heading", "caption", "stat", "subtitle"]))
+            el = make_text(rng, th, role, box[0], box[1], max(w, 120), h,
+                           align=str(rng.choice(["l", "c", "r"])))
+            if el and not _overlaps(el["box"], placed):
+                b.add(el)
+                placed.append(el["box"])
+        elif _overlaps(box, placed):
+            continue
+        elif kind == "shape":
+            b.shape(str(rng.choice(list(("rect", "rounded", "oval", "chevron", "pentagon")))), box,
+                    th["accent"] if rng.random() < 0.5 else th["accent2"])
+            placed.append(box)
+        elif kind == "picture":
+            b.picture(box)
+            placed.append(box)
+        else:                                    # card: shape with text on top
+            b.shape(b.card_kind(), box, th["card"])
+            b.text("body", box[0] + 12, box[1] + 12, w - 24, h - 24)
+            placed.append(box)
+
+
 LAYOUTS = {
     "title": (t_title, 1.0), "bullets": (t_bullets, 1.2), "split": (t_split, 1.6),
     "cards": (t_cards, 1.6), "hero": (t_hero, 0.8), "gallery": (t_gallery, 0.8),
@@ -366,14 +430,17 @@ LAYOUTS = {
 }
 
 
-def random_slide(rng, assets_dir, photo_dir=None, zh_ratio=0.3):
+def random_slide(rng, assets_dir, photo_dir=None, zh_ratio=0.3, random_ratio=0.0):
     th = content.random_theme(rng, zh_ratio)
     names = list(LAYOUTS)
     p = np.array([LAYOUTS[n][1] for n in names]); p /= p.sum()
     name = str(rng.choice(names, p=p))
+    # only draw the extra random number when asked, so ratio 0 reproduces old datasets exactly
+    if random_ratio > 0 and rng.random() < random_ratio:
+        name = "random"
     b = Builder(rng, th, assets_dir, photo_dir)
     m = float(rng.uniform(44, 96))
-    LAYOUTS[name][0](b, m)
+    (t_random if name == "random" else LAYOUTS[name][0])(b, m)
     bg = dict(style=th["bg_style"], color=list(th["bg"]))
     if th["bg_style"] != "solid":
         img = content.background_image(rng, th, W, H)

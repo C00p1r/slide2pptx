@@ -5,7 +5,7 @@ Newest entries at the top. Format: **Done** / **Issues & fixes** / **Next**.
 
 ---
 
-## 2026-11-18 (afternoon) — More icons in the generator
+## 2026-11-18 (afternoon) — More icons, random-layout option
 
 **Done**
 - New `iconlist` layout (rows of icon + heading + text, common in AI decks).
@@ -13,11 +13,22 @@ Newest entries at the top. Format: **Done** / **Issues & fixes** / **Next**.
   number) and bullet slides (decorative icon in free space); cards now have
   icons 85% of the time instead of 60%.
 
+- `--random-ratio R`: a share R of slides use a new `random` layout that scatters
+  every element type at random positions without overlaps (domain
+  randomisation). Default 0, which reproduces earlier datasets exactly.
+  Planned experiment: train on templates only vs random only vs 80/20 mix and
+  compare scores on the real NotebookLM slides. Samples:
+  `docs/img/random_layout_samples.png`.
+
 **Issues & fixes**
 - *Too few icons to measure icon accuracy* (reported by the YOLO thread): in 300
   slides icons were 81 of 2201 boxes (3.7%), only 6 in the test split.
   **Fix:** the changes above. Same 300-slide check now gives 329 of 2633 boxes
   (12.5%), 30 in the test split.
+- *Big numbers like "$157M" split across two lines.* The text-fit check only
+  counted wrapped lines, so a single word wider than its box "fit", and
+  PowerPoint then broke it mid-word. **Fix:** a line wider than the box now
+  counts as not fitting, so the font shrinks or the text is dropped.
 
 ---
 
