@@ -46,7 +46,8 @@ python -m detector.predict runs/detect/slides/weights/best.pt data/real/images -
 colour jitter, and extra JPEG / blur / downscale / noise augmentation (`detector/augment.py`)
 to narrow the gap between clean synthetic renders and real NotebookLM images. Add
 `--no-sim2real` to train the ablation without it. `evaluate.py` writes a per-class
-mAP@0.5 / mAP@0.5:0.95 table to `results/detector/<tag>.md`.
+mAP@0.5 / mAP@0.5:0.95 table to `results/detector/<tag>.md`, and `compare.py` puts
+several runs into one table (e.g. training-set or augmentation comparisons).
 `data.yaml` is rewritten to wherever the dataset currently is, so moving it is fine.
 
 ## Real test slides (NotebookLM)

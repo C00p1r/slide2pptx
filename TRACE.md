@@ -19,6 +19,9 @@ Newest entries at the top. Format: **Done** / **Issues & fixes** / **Next**.
 - Smoke test on CPU: 300 synthetic slides, yolo11n, imgsz 640, 3 epochs →
   mAP@0.5 0.83 / mAP@0.5:0.95 0.64 on the 30-slide test split. This only shows the
   pipeline works end to end; real numbers come from the Colab run.
+- `detector/compare.py` and a notebook section for the training-set experiment:
+  templates only vs random layouts only (`--random-ratio 1`) vs 80/20 mix (`0.2`),
+  same size and settings, compared on the real slides in one table.
 - Round-trip test of the labelling tool: synthetic labels exported with a shuffled
   class order and rebuilt are byte-identical to the originals.
 
