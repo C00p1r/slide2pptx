@@ -1,0 +1,7 @@
+# step 1: synthetic data
+python-pptx>=1.0
+lxml
+numpy
+pillow>=10
+matplotlib
+# step 2+ (training) will add: ultralytics, paddleocr, torch
