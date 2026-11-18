@@ -5,6 +5,22 @@ Newest entries at the top. Format: **Done** / **Issues & fixes** / **Next**.
 
 ---
 
+## 2026-11-18 (afternoon) — More icons in the generator
+
+**Done**
+- New `iconlist` layout (rows of icon + heading + text, common in AI decks).
+- Icons added to stats (50% of slides), process steps (40%, replacing the
+  number) and bullet slides (decorative icon in free space); cards now have
+  icons 85% of the time instead of 60%.
+
+**Issues & fixes**
+- *Too few icons to measure icon accuracy* (reported by the YOLO thread): in 300
+  slides icons were 81 of 2201 boxes (3.7%), only 6 in the test split.
+  **Fix:** the changes above. Same 300-slide check now gives 329 of 2633 boxes
+  (12.5%), 30 in the test split.
+
+---
+
 ## 2026-11-18 — Topic chosen, synthetic slide generator v1
 
 **Done**
@@ -14,7 +30,7 @@ Newest entries at the top. Format: **Done** / **Issues & fixes** / **Next**.
 - Wrote `PLAN.md` (4-week plan, due 2026-12-15).
 - Built `slidegen/`, the synthetic slide generator:
   - 8 layout templates: title, bullets, text + picture, cards, hero, gallery,
-    stats, process.
+    stats, process, icon list.
   - Random themes (light/dark, accent colours, fonts), English and Traditional
     Chinese text, emoji icons, procedural pictures and matplotlib charts.
   - Renders with LibreOffice → PDF → PNG at 1280×720.
