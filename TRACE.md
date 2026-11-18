@@ -30,7 +30,7 @@ Newest entries at the top. Format: **Done** / **Issues & fixes** / **Next**.
 - Wrote `PLAN.md` (4-week plan, due 2026-12-15).
 - Built `slidegen/`, the synthetic slide generator:
   - 8 layout templates: title, bullets, text + picture, cards, hero, gallery,
-    stats, process, icon list.
+    stats, process.
   - Random themes (light/dark, accent colours, fonts), English and Traditional
     Chinese text, emoji icons, procedural pictures and matplotlib charts.
   - Renders with LibreOffice → PDF → PNG at 1280×720.
