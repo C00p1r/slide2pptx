@@ -15,7 +15,7 @@ from .data import local_yaml
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--data", required=True, help="data.yaml from slidegen.generate")
+    ap.add_argument("--data", help="data.yaml from slidegen.generate (not needed with --resume)")
     ap.add_argument("--model", default="yolo11s.pt", help="yolo11n/s/m.pt, yolov8s.pt, or a .pt to fine-tune")
     ap.add_argument("--epochs", type=int, default=60)
     ap.add_argument("--imgsz", type=int, default=1280)
@@ -42,6 +42,8 @@ def main():
         YOLO(f"{os.path.abspath(a.project)}/{a.name}/weights/last.pt").train(resume=True)
         return
 
+    if not a.data:
+        ap.error("--data is required unless --resume")
     from .augment import sim2real
 
     data = local_yaml(a.data)

@@ -5,6 +5,33 @@ Newest entries at the top. Format: **Done** / **Issues & fixes** / **Next**.
 
 ---
 
+## 2026-11-19 — Random-ratio experiment set up
+
+**Done**
+- Plan in `docs/experiments.md`: train the same model with R ∈ {0, 0.2, 0.5, 0.8, 1}
+  share of random-layout slides and test on template, random and real slides.
+- `detector/mix.py` builds every R from two generated pools (templates only, random
+  only), so all sets have the same size and only the mix changes.
+- `detector/sweep.py` writes the results table and the mAP-vs-R plot.
+- Notebook section E1–E6 (+ Phase 2) replaces the earlier three-set cells. It skips
+  finished runs and resumes interrupted ones, so it survives Colab disconnects.
+- Tested the whole section here on tiny pools (60 slides, 1 epoch, CPU): mixing,
+  training, skip-on-rerun, evaluation, table and plot all work.
+
+**Issues & fixes**
+- *`--random-ratio` flips a coin per slide*, so a generated set is only roughly R and
+  each R would need its own render. **Fix:** mix two pools by file list (exact R, one
+  render pass).
+- *Pools with the same seed share themes slide by slide* (theme is drawn first from the
+  per-slide seed). **Fix:** seed 0 for templates, seed 1 for random.
+- *Early stopping and best.pt use each set's own synthetic val*, which differs by R.
+  **Fix:** `--patience 0` and evaluate `last.pt`.
+
+**Next**
+- Generate pools and run the sweep on Colab; add real results once labels exist.
+
+---
+
 ## 2026-11-18 (afternoon) — More icons, random-layout option
 
 **Done**
