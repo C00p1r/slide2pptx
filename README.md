@@ -76,7 +76,8 @@ data/synth/
 Classes: `0 title, 1 text, 2 shape, 3 picture, 4 icon`.
 
 Useful options: `--photo-dir DIR` uses your own photos as slide pictures (more
-realistic), `--zh-ratio 0.3` sets the share of Chinese slides, `--jpg` saves smaller
+realistic), `--random-ratio 0.2` makes 20% of slides fully random layouts
+(domain randomisation), `--zh-ratio 0.3` sets the share of Chinese slides, `--jpg` saves smaller
 files, `--start N` extends an existing dataset without overwriting it.
 
 ## How the labels stay exact

@@ -29,8 +29,12 @@ def _measure(paras, fam, bold, size_px, width, lang, bullet):
     indent = size_px * 1.2 if bullet else 0
     lh = fonts.line_height(fam, bold, size_px)
     gap = size_px * 0.35 if len(paras) > 1 else 0
-    n_lines = [len(fonts.wrap(p, fam, bold, size_px, width - indent, lang)) for p in paras]
+    wrapped = [fonts.wrap(p, fam, bold, size_px, width - indent, lang) for p in paras]
+    n_lines = [len(w) for w in wrapped]
     h = sum(n_lines) * lh + gap * (len(paras) - 1)
+    # a single word wider than the box would be broken mid-word by PowerPoint: treat as not fitting
+    if any(fonts.text_width(line, fam, bold, size_px) > width - indent for w in wrapped for line in w):
+        h = float("inf")
     return h, n_lines
 
 
@@ -162,9 +166,14 @@ def t_title(b, m):
 
 
 def t_bullets(b, m):
+    rng = b.rng
     y = _title(b, m)
     w = (W - 2 * m) * b.rng.uniform(0.7, 1.0)
     b.text("bullets", m, y, w, H - y - m)
+    if w < (W - 2 * m) * 0.8 and rng.random() < 0.6:     # decorative icon in the free space
+        free = W - m - (m + w)
+        size = min(free * 0.7, rng.uniform(80, 180))
+        b.icon(m + w + free / 2, y + (H - y - m) / 2, size)
     _footer(b, m)
 
 
@@ -196,7 +205,7 @@ def t_cards(b, m):
     ch = (H - y - m - gap * (rows - 1)) / rows
     ch = min(ch, rng.uniform(0.7, 1.0) * ch + 40)
     outline = th["muted"] if rng.random() < 0.3 else None
-    with_icon = rng.random() < 0.6
+    with_icon = rng.random() < 0.85
     fit_cards = rows == 1 and rng.random() < 0.6
     cards, bottoms = [], []
     for i in range(k):
@@ -282,12 +291,18 @@ def t_stats(b, m):
     gap = rng.uniform(20, 40)
     cw = (W - 2 * m - gap * (k - 1)) / k
     on_card = rng.random() < 0.5
-    ch = min(H - y - m, 300)
+    stat_icons = rng.random() < 0.5
+    ch = min(H - y - m, 360 if stat_icons else 300)
     for i in range(k):
         cx = m + i * (cw + gap)
         if on_card:
             b.shape(b.card_kind(), [cx, y, cw, ch], th["card"])
-        st = b.text("stat", cx + 10, y + 20, cw - 20, 110, align="c", color=th["accent"])
+        sy0 = y + 20
+        if stat_icons:
+            size = rng.uniform(36, 56)
+            b.icon(cx + cw / 2, sy0 + size / 2, size)
+            sy0 += size + 8
+        st = b.text("stat", cx + 10, sy0, cw - 20, 110, align="c", color=th["accent"])
         if st:
             sy = st["box"][1] + st["box"][3] + 6
             b.text("caption" if rng.random() < 0.5 else "body", cx + 14, sy, cw - 28,
@@ -303,33 +318,129 @@ def t_process(b, m):
     kind = rng.choice(["oval", "chevron", "rounded"])
     sh = min(90, cw * 0.6) if kind == "oval" else 70
     sw = sh if kind == "oval" else cw
+    step_icons = rng.random() < 0.4
     if kind == "oval" and rng.random() < 0.7:     # connector line behind circles
         b.shape("rect", [m + cw / 2, y + sh / 2 - 2, W - 2 * m - cw, 4], th["muted"])
     for i in range(k):
         cx = m + i * (cw + gap)
         sx = cx + (cw - sw) / 2
         b.shape(kind, [sx, y, sw, sh], th["accent"] if i % 2 == 0 or rng.random() < 0.5 else th["accent2"])
-        b.text("label", sx + 6, y + sh / 2 - 26, sw - 12, 52, align="c", color=(255, 255, 255))
+        if step_icons:
+            b.icon(sx + sw / 2, y + sh / 2, sh * 0.55)
+        else:
+            b.text("label", sx + 6, y + sh / 2 - 26, sw - 12, 52, align="c", color=(255, 255, 255))
         hd = b.text("heading", cx, y + sh + 16, cw, 70, align="c")
         ty = (hd["box"][1] + hd["box"][3] + 4) if hd else y + sh + 16
         b.text("body", cx, ty, cw, H - ty - m, align="c")
 
 
+def t_iconlist(b, m):
+    """Rows of icon + heading + text: very common in AI-generated decks."""
+    rng, th = b.rng, b.th
+    y = _title(b, m)
+    k = int(rng.integers(3, 7))
+    cols = 2 if k >= 4 and rng.random() < 0.6 else 1
+    rows = int(np.ceil(k / cols))
+    gap = rng.uniform(12, 24)
+    cw = (W - 2 * m - 40 * (cols - 1)) / cols
+    rh = (H - y - m - gap * (rows - 1)) / rows
+    size = min(rh * 0.7, rng.uniform(36, 60))
+    circle = rng.random() < 0.4
+    for i in range(k):
+        cx = m + (i % cols) * (cw + 40)
+        cy = y + (i // cols) * (rh + gap)
+        icx, icy = cx + size * 0.7, cy + size * 0.7
+        if circle:
+            b.shape("oval", [icx - size * 0.7, icy - size * 0.7, size * 1.4, size * 1.4],
+                    th["accent"] if rng.random() < 0.7 else th["card"])
+            b.icon(icx, icy, size * 0.8)
+        else:
+            b.icon(icx, icy, size)
+        tx = cx + size * 1.4 + 16
+        hd = b.text("heading", tx, cy, cx + cw - tx, rh * 0.45)
+        ty = (hd["box"][1] + hd["box"][3]) if hd else cy
+        if rh - (ty - cy) > 30:
+            b.text("body", tx, ty, cx + cw - tx, cy + rh - ty)
+
+
+def _overlaps(box, placed, pad=8):
+    x, y, w, h = box
+    for px, py, pw, ph in placed:
+        if x < px + pw + pad and px < x + w + pad and y < py + ph + pad and py < y + h + pad:
+            return True
+    return False
+
+
+def t_random(b, m):
+    """Domain randomisation: element types scattered at random, no overlaps.
+
+    Not chosen by template weight; used only through --random-ratio.
+    """
+    rng, th = b.rng, b.th
+    placed = []
+    if rng.random() < 0.5:                       # keep a normal title half the time
+        y0 = _title(b, m)
+        placed.append([0, 0, W, y0 - 10])
+    else:                                        # or put it anywhere
+        w = rng.uniform(300, W - 2 * m)
+        el = make_text(rng, th, "title", rng.uniform(0, W - w), rng.uniform(0, H * 0.8), w, H * 0.3)
+        if el:
+            b.add(el)
+            placed.append(el["box"])
+    n = int(rng.integers(4, 13))
+    for _ in range(n * 6):                       # attempts
+        if len(placed) > n:
+            break
+        kind = rng.choice(["text", "text", "shape", "picture", "icon", "card"])
+        if kind == "icon":
+            size = rng.uniform(28, 120)
+            box = [rng.uniform(0, W - size), rng.uniform(0, H - size), size, size]
+            if not _overlaps(box, placed):
+                b.icon(box[0] + size / 2, box[1] + size / 2, size)
+                placed.append(box)
+            continue
+        w, h = rng.uniform(60, 600), rng.uniform(40, 360)
+        box = [rng.uniform(0, W - w), rng.uniform(0, H - h), w, h]
+        if kind == "text":
+            role = str(rng.choice(["body", "bullets", "heading", "caption", "stat", "subtitle"]))
+            el = make_text(rng, th, role, box[0], box[1], max(w, 120), h,
+                           align=str(rng.choice(["l", "c", "r"])))
+            if el and not _overlaps(el["box"], placed):
+                b.add(el)
+                placed.append(el["box"])
+        elif _overlaps(box, placed):
+            continue
+        elif kind == "shape":
+            b.shape(str(rng.choice(list(("rect", "rounded", "oval", "chevron", "pentagon")))), box,
+                    th["accent"] if rng.random() < 0.5 else th["accent2"])
+            placed.append(box)
+        elif kind == "picture":
+            b.picture(box)
+            placed.append(box)
+        else:                                    # card: shape with text on top
+            b.shape(b.card_kind(), box, th["card"])
+            b.text("body", box[0] + 12, box[1] + 12, w - 24, h - 24)
+            placed.append(box)
+
+
 LAYOUTS = {
     "title": (t_title, 1.0), "bullets": (t_bullets, 1.2), "split": (t_split, 1.6),
     "cards": (t_cards, 1.6), "hero": (t_hero, 0.8), "gallery": (t_gallery, 0.8),
-    "stats": (t_stats, 0.8), "process": (t_process, 1.0),
+    "stats": (t_stats, 0.8), "process": (t_process, 1.0), "iconlist": (t_iconlist, 1.2),
 }
 
 
-def random_slide(rng, assets_dir, photo_dir=None, zh_ratio=0.3):
+def random_slide(rng, assets_dir, photo_dir=None, zh_ratio=0.3, random_ratio=0.0):
     th = content.random_theme(rng, zh_ratio)
     names = list(LAYOUTS)
     p = np.array([LAYOUTS[n][1] for n in names]); p /= p.sum()
     name = str(rng.choice(names, p=p))
+    # only draw the extra random number when asked, so ratio 0 reproduces old datasets exactly
+    if random_ratio > 0 and rng.random() < random_ratio:
+        name = "random"
     b = Builder(rng, th, assets_dir, photo_dir)
     m = float(rng.uniform(44, 96))
-    LAYOUTS[name][0](b, m)
+    (t_random if name == "random" else LAYOUTS[name][0])(b, m)
     bg = dict(style=th["bg_style"], color=list(th["bg"]))
     if th["bg_style"] != "solid":
         img = content.background_image(rng, th, W, H)

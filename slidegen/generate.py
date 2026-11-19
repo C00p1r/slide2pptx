@@ -50,7 +50,7 @@ def run_batch(job):
         specs = []
         for idx in range(start, start + count):
             rng = np.random.default_rng([a["seed"], idx])
-            specs.append(random_slide(rng, assets, a["photo_dir"], a["zh_ratio"]))
+            specs.append(random_slide(rng, assets, a["photo_dir"], a["zh_ratio"], a["random_ratio"]))
         profile = os.path.join(a["tmp"], f"lo_profile_{os.getpid()}")
         modes = ["full", "idmap"] + ([] if a["no_clean"] else ["clean"])
         pages = {}
@@ -97,6 +97,8 @@ def main():
     ap.add_argument("--workers", type=int, default=max(1, (os.cpu_count() or 2) - 1))
     ap.add_argument("--photo-dir", default=None, help="optional folder of real photos to use as pictures")
     ap.add_argument("--zh-ratio", type=float, default=0.3, help="share of slides with Chinese text")
+    ap.add_argument("--random-ratio", type=float, default=0.0,
+                    help="share of slides with fully random placement (domain randomisation), 0-1")
     ap.add_argument("--ratios", default="0.8,0.1,0.1", help="train,val,test")
     ap.add_argument("--no-clean", action="store_true", help="skip the text-free render (faster)")
     ap.add_argument("--jpg", action="store_true", help="save JPEG instead of PNG (smaller)")
@@ -113,7 +115,7 @@ def main():
                 f"names:\n" + "".join(f"  {i}: {c}\n" for i, c in enumerate(CLASSES)))
 
     tmp = tempfile.mkdtemp(prefix="slidegen_")
-    args = dict(out=out, seed=a.seed, photo_dir=a.photo_dir, zh_ratio=a.zh_ratio,
+    args = dict(out=out, seed=a.seed, photo_dir=a.photo_dir, zh_ratio=a.zh_ratio, random_ratio=a.random_ratio,
                 ratios=[float(x) for x in a.ratios.split(",")], no_clean=a.no_clean,
                 ext="jpg" if a.jpg else "png", tmp=tmp)
     jobs = [(s, min(a.batch, a.start + a.n - s), args) for s in range(a.start, a.start + a.n, a.batch)]
