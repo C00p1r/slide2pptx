@@ -11,7 +11,7 @@ green: shape, orange: picture, purple: icon.*
 
 ## Status
 - [x] Synthetic slide generator (`slidegen/`)
-- [ ] Element detector (YOLO)
+- [x] Element detector (YOLO): training, evaluation, real-slide labelling tools (`detector/`)
 - [ ] OCR + font-attribute CNN
 - [ ] Text removal (inpainting)
 - [ ] PPTX rebuilder + evaluation
@@ -35,6 +35,21 @@ python -m slidegen.visualize data/synth --n 12      # check labels -> data/synth
 ```
 Windows: run the generator in Colab or WSL. LibreOffice rendering is Linux-only here.
 
+## Element detector (YOLO)
+Train on Colab with [`notebooks/train_yolo.ipynb`](notebooks/train_yolo.ipynb) (T4 GPU), or locally:
+```bash
+python -m detector.train --data data/synth/data.yaml --model yolo11s.pt --epochs 40 --batch 8
+python -m detector.evaluate runs/detect/slides/weights/best.pt --data data/synth/data.yaml --split test
+python -m detector.predict runs/detect/slides/weights/best.pt data/real/images --out results/pred_real
+```
+`train.py` defaults suit slides: imgsz 1280, no flips or rotation, little mosaic, stronger
+colour jitter, and extra JPEG / blur / downscale / noise augmentation (`detector/augment.py`)
+to narrow the gap between clean synthetic renders and real NotebookLM images. Add
+`--no-sim2real` to train the ablation without it. `evaluate.py` writes a per-class
+mAP@0.5 / mAP@0.5:0.95 table to `results/detector/<tag>.md`, and `compare.py` puts
+several runs into one table (e.g. training-set or augmentation comparisons).
+`data.yaml` is rewritten to wherever the dataset currently is, so moving it is fine.
+
 ## Real test slides (NotebookLM)
 Put the NotebookLM `.pptx` exports in a folder, then:
 ```bash
@@ -42,6 +57,11 @@ python tools/extract_slides.py path/to/pptx_folder --out data/real/images
 ```
 Each slide's image is saved at full resolution, and `data/real/real_slides.csv` is
 started for tagging (language, layout, style, hard_case). `data/` is git-ignored.
+
+To measure real mAP, the slides need hand-drawn boxes. [`docs/labelling.md`](docs/labelling.md)
+covers the labelling rules and the CVAT workflow: `tools/real_labels.py prelabel` makes
+pre-labels from a trained detector, and `tools/real_labels.py build` turns the CVAT
+export into `data/real/yolo/` for `detector.evaluate`.
 
 ## Synthetic dataset format
 ```

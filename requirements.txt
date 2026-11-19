@@ -4,4 +4,8 @@ lxml
 numpy
 pillow>=10
 matplotlib
-# step 2+ (training) will add: ultralytics, paddleocr, torch
+# step 2: element detector
+ultralytics>=8.3.200
+albumentations>=2.0
+pyyaml
+# step 3+ will add: paddleocr
