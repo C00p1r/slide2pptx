@@ -5,6 +5,43 @@ Newest entries at the top. Format: **Done** / **Issues & fixes** / **Next**.
 
 ---
 
+## 2026-11-27 — Using box relations: shapes found behind detected text
+
+**Done**
+- Cooper asked whether the model understands box relations (text usually sits on a shape).
+  It does not: YOLO predicts every box on its own. On the 20 real slides (R=0.5 base),
+  34 of 98 shape-with-text pairs had **only the text found**. Shapes with no text inside
+  are almost never found (1/35).
+- `detector/containers.py` (`find_cards`): for each detected text box, grow the region of
+  the colour just outside it and keep it as a `shape` (conf 0.30) if it contains the text,
+  is card-sized, mostly filled and has a colour edge. Synthetic check with true text boxes
+  as seeds: finds 91% of text-holding shapes, and 92% of what it adds is correct.
+  `evalpred --cards` / `predict --cards` use it.
+- Real slides, P / R / F1 at conf 0.25:
+
+| model (test slides) | | mAP@0.5:0.95 | P | R | F1 | shape mAP@0.5:0.95 | shape recall | only-text pairs |
+|---|---|---|---|---|---|---|---|---|
+| R=0.5 base (20) | raw | 0.333 | 0.818 | 0.446 | 0.578 | 0.206 | 0.24 | 34 |
+| | + cards | **0.347** | 0.821 | **0.480** | **0.605** | **0.275** | **0.36** | 21 |
+| fold 0 mix (10) | raw | 0.449 | 0.704 | 0.650 | 0.676 | 0.344 | 0.42 | 21 |
+| | + cards | 0.455 | 0.701 | 0.678 | 0.689 | 0.375 | 0.52 | 16 |
+| fold 1 mix (10) | raw | 0.304 | 0.555 | 0.555 | 0.555 | 0.287 | 0.40 | 12 |
+| | + cards | 0.309 | 0.560 | 0.579 | 0.569 | 0.310 | 0.50 | 6 |
+
+- Recall goes up with no loss in precision: 13 of the 15 cards it added on the base model
+  are correct (IoU 0.78-0.98). With `--post` as well, F1 is best (0.607 / 0.705 / 0.585).
+
+**Issues & fixes**
+- *Crash on Cooper's laptop*: `cv2.imread` cannot open Chinese file names on Windows.
+  **Fix:** `cv2.imdecode(np.fromfile(...))`.
+- *Wrong cards (2)*: a light gradient with a circuit pattern taken as a 37%-of-slide card, and
+  a striped block that was really an icon.
+- *Missed cards*: outline-only cards whose fill equals the background (white boxes on grid
+  paper), since step 2 skips them by design. Also cards whose text YOLO missed, which leaves
+  no seed. Possible next step: an outline mode (edges + rectangular contours around text).
+
+---
+
 ## 2026-11-27 — Low recall: diagnosis and inference-time fixes
 
 **Done**

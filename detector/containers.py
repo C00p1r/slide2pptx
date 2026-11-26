@@ -43,7 +43,8 @@ def find_cards(image, dets, conf=0.3, bg_tol=8.0, fill_tol=18, min_grow=1.15, ma
     import cv2
 
     if isinstance(image, str):
-        img = cv2.cvtColor(cv2.imread(image), cv2.COLOR_BGR2RGB)
+        # cv2.imread cannot open non-ASCII paths on Windows (most of our slide names are Chinese)
+        img = cv2.cvtColor(cv2.imdecode(np.fromfile(image, np.uint8), cv2.IMREAD_COLOR), cv2.COLOR_BGR2RGB)
     else:
         img = np.asarray(image)
     H, W = img.shape[:2]
