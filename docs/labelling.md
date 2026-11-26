@@ -5,28 +5,33 @@ training (except the optional few-shot experiment in PLAN.md), so their labels m
 follow the same rules as the synthetic labels, or the mAP numbers will measure
 label disagreement instead of detector quality.
 
-## Tool: CVAT (free, browser, keeps your slides private)
-Roboflow also works, but its free plan makes projects public. Label Studio works too;
-any tool is fine as long as it exports YOLO txt with class names.
+## Tool: `tools/labeler.py` (local, no install, no account)
+A small box editor that runs on your computer (Python standard library only). Boxes start
+from a detector's predictions, so you fix them instead of drawing everything.
 
 1. Collect slides: `python tools/extract_slides.py path/to/pptx_folder --out data/real/images`
-2. Pre-label with a trained detector, so you correct boxes instead of drawing all of them:
+2. Predictions to start from (any run, e.g. the R=0.5 model from the ratio sweep):
    ```bash
-   python tools/real_labels.py prelabel runs/detect/slides/weights/best.pt
-   # -> data/real/cvat_prelabels.zip
+   python -m detector.predict runs/ratio/r0.50/weights/last.pt data/real/images --out results/pred_llm/r0.50
    ```
-3. On [app.cvat.ai](https://app.cvat.ai): create a project with the 5 labels
-   `title, text, shape, picture, icon` (rectangle), create a task, upload every
-   image in `data/real/images`.
-4. In the task: **Actions → Upload annotations → YOLO 1.1**, choose `cvat_prelabels.zip`.
-5. Fix every box (rules below). Budget about 2–3 min per slide; 40 slides ≈ 1.5–2 h.
-6. **Actions → Export task dataset → YOLO 1.1** (no images needed). Then:
+3. Label 20 slides spread over all decks (same 20 every time with the same seed):
    ```bash
-   python tools/real_labels.py build path/to/export.zip
+   python tools/labeler.py --pred results/pred_llm/r0.50 --sample 20
+   # opens http://localhost:8765, saves data/real/labels/<slide>.txt (YOLO) + classes.txt
+   ```
+   Drag to draw a box, click to select, drag the corners to resize, `1`-`5` set the class,
+   `Del` deletes, `D` saves and goes to the next slide. A dashed box is a low-confidence
+   prediction. Stop any time: a slide is done once its .txt exists, and the tool resumes there.
+4. Build the test set and evaluate:
+   ```bash
+   python tools/real_labels.py build data/real/labels
    # -> data/real/yolo/{images,labels}/test + data.yaml, prints box counts per class
-   python -m detector.evaluate runs/detect/slides/weights/best.pt \
-       --data data/real/yolo/data.yaml --tag real
+   python -m detector.evaluate runs/ratio/r0.50/weights/last.pt --data data/real/yolo/data.yaml --tag real
    ```
+
+**Alternative: CVAT** ([app.cvat.ai](https://app.cvat.ai), free, browser). `python tools/real_labels.py prelabel <weights>`
+writes `data/real/cvat_prelabels.zip` (upload with *Actions -> Upload annotations -> YOLO 1.1*); export
+the corrected task as *YOLO 1.1* and pass that zip to `real_labels.py build`.
 
 **Bias warning:** pre-labels can nudge you toward the model's mistakes. Check each
 slide for *missing* boxes too, not only wrong ones, and redraw loose boxes tightly.
@@ -45,3 +50,33 @@ slide for *missing* boxes too, not only wrong ones, and redraw loose boxes tight
 - When an element is truly ambiguous (e.g. an illustration that could be an icon), pick
   one, and note the slide in `data/real/real_slides.csv` (`hard_case` column) so we can
   discuss it in the report.
+
+### NotebookLM slides (decided 2026-11-26)
+- **Text first.** Getting every text block right matters most: these are what become
+  editable text boxes in the .pptx. Check the slide for missed text before anything else.
+- **One test for `shape`:** the outline is a basic shape (rectangle, rounded box, circle,
+  bar, line, arrow) **and** it is filled or drawn mostly in one flat colour. Glow,
+  transparency, a shadow, rough or torn edges, a slight tilt or a sketchy outline are fine
+  (neon rings, a semi-transparent card, a sticky note, a yellow highlighter stroke, a
+  hand-drawn box). Whether text sits on it does not change the class.
+  Visible hatching, shading or several colours inside (a hatched brush arrow, a paper
+  clip) fail the test: small -> `icon`, large -> `picture`. A diagram built from such
+  shapes plus text is labelled part by part: each shape `shape`, each label `text`.
+- A **painted or drawn illustration** (shading, texture, 3D, hand-drawn) counts as
+  **one `picture`** box. Do not box the parts inside it or its small words.
+  A small single drawn object (a brush-stroke arrow, a stack of boxes) is `icon`.
+- When a region is **too complex to rebuild** (many stacked or overlapping layers), treat it
+  as background: **no box at all**. It stays in the background image of the .pptx.
+- Text that sits on a sticky note or card *outside* a diagram is still `text`, and the
+  note or card is a `shape`.
+- **Formula or big stylised text** (e.g. `A → aV*`): if you could type it on a keyboard,
+  it is one `text` box. Hand-drawn marks on it (a red circle, an underline swoosh) get no box.
+- **Clip-art objects** (a thumbs-up, a scanner, a lightbulb) are `icon` when they are a
+  single small object, roughly square and under about 10% of the slide width. A scene
+  or a drawing with several parts is `picture`.
+- **Photo collages:** each photo is `picture` (a stack of polaroids counts as one).
+  Large props that only serve as a backdrop (an open book, a desk, a wall texture) get
+  no box. Sticky notes and torn-paper labels are `shape` by the test above (text on them is
+  `text`), and the pins holding them get no box.
+- **Decorative textures** (hatching, ink splatter, grid paper) get no box.
+- A symbol you can type (`⊢`, `→`, `∑`) is `text`, even when drawn large.

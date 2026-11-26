@@ -65,3 +65,25 @@ E5 adds the real results later without retraining.
 - **Week 2 (Nov 25 – Dec 1):** steps 1–5 on synthetic; label real slides in parallel.
 - **By Dec 1:** real column filled in, best R chosen.
 - **Week 3 (Dec 2 – 8):** Phase 2 runs; the best full-scale model becomes the demo model.
+
+## Few-shot fine-tuning on real slides
+
+Cooper picked this over changing the generator (2026-11-26). The 20 hand-labelled
+NotebookLM slides are split into 2 folds **by deck**, so no deck is in both train and test.
+Each fold fine-tunes the R=0.5 model on the other fold's ~10 slides and tests on its own.
+Every labelled slide is tested once, always by a model that never saw its deck.
+
+```bash
+python -m detector.fewshot runs/ratio/r0.50/weights/last.pt --real data/real/yolo \
+    --synth data/pools/pool_tpl data/pools/pool_rand
+# -> results/fewshot/fewshot.md
+```
+
+| model | trained on |
+|---|---|
+| base | synthetic only (the R=0.5 model as it is) |
+| real | + fine-tuned on ~10 real slides (repeated to ~40 per epoch), backbone frozen, 20 epochs |
+| mix  | same, plus as many synthetic slides per epoch, to guard against forgetting |
+
+With ~10 test slides per fold the numbers are noisy. Compare base and fine-tuned on
+the **same** slides, and label more slides from unseen decks before drawing firm conclusions.

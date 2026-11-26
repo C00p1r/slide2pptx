@@ -5,6 +5,125 @@ Newest entries at the top. Format: **Done** / **Issues & fixes** / **Next**.
 
 ---
 
+## 2026-11-26 (night) — Labelling rules settled, few-shot experiment started
+
+**Done**
+- **Labelling workflow.** Started with CVAT (pre-labels as a zip), but uploading,
+  exporting and the class setup took too long. Replaced it with `tools/labeler.py`:
+  a local page (Python standard library only) that opens each slide with the
+  R=0.5 model's boxes already drawn. Fixing a slide takes key presses (`1`-`5` class,
+  `Del`, `D` save + next) instead of drawing every box. 20 slides, 392 boxes took
+  Cooper about 1.5 h (21:05-22:30), including settling the rules below.
+- **Choosing which slides to label.** `--sample 20` takes slides round-robin over the 19
+  decks with a fixed seed, so the test set covers every deck and is reproducible.
+- **Ranking models without labels.** Before any labels existed, `detector/compare_preds.py`
+  ran all 5 models on the 237 slides and measured how well they agree with each other
+  (F1 0.44-0.63) plus side-by-side images. The low agreement was the first sign of a
+  large sim-to-real gap, and the reason to hand-label at all.
+- **Labelling rules decided while labelling** (full text in `docs/labelling.md`):
+  1. Text first: every text block must be right, since it becomes editable text.
+  2. One test for `shape`: a basic outline (rectangle, circle, bar, line, arrow) filled
+     mostly in one flat colour. Glow, transparency, shadows, torn edges and sketchy
+     hand-drawn outlines still count (neon rings, sticky notes, highlighter strokes,
+     hand-drawn frames). Text on top does not change the class.
+  3. Hatching, shading or several colours inside fail that test: small -> `icon`
+     (paper clip, brush-stroke arrow, lightbulb), large -> `picture` (photo, record
+     illustration). Nothing inside a picture is boxed, including words printed on it.
+  4. No box for backdrops and textures (grunge wall, open book behind notes, grid
+     paper, circuit pattern) or for regions too layered to rebuild.
+  5. Anything you can type is `text`, even large or stylised (`A → aV*`, `⊢`).
+- **Cooper chose few-shot over generator changes** to close the gap.
+  `detector/fewshot.py` splits the 20 slides into 2 folds **by deck**. Each fold
+  fine-tunes the R=0.5 model on the other ~10 slides and tests on its own. It compares
+  `base` (no fine-tune), `real` (real slides only) and `mix` (real + an equal number of
+  synthetic slides, against forgetting) on the same held-out slides. Settings: backbone
+  frozen, AdamW lr 5e-4, 20 epochs, real slides repeated to ~40 per epoch.
+  First number: fold 0 base = mAP@0.5 0.516 / mAP@0.5:0.95 0.421. Run in progress.
+
+**Issues & fixes**
+- *Hand-drawn frames were first labelled `icon`.* `icon` in the synthetic data means
+  small square pictograms, so the mismatch would count as detector error. **Fix:**
+  rule 2 above. A check lists icons wider than 10% of the slide: 28 found, 3 clearly
+  wrong (Edgerunners_05, OS_12), sent back for fixing.
+- *An earlier rule ("a drawn diagram is one picture") hid the diagram's text*,
+  against text-first. **Fix:** diagrams made of basic shapes are labelled part by part;
+  only painted illustrations are one `picture`.
+- *Colab Pro has no background execution.* The runtime survived Chrome sleeping, but
+  the page lost its connection, and reloading it discarded unsaved outputs. Later,
+  reconnecting found no free T4 ("no backend with GPU available"). **Fix:** run long
+  jobs from the Colab terminal so they don't depend on the page. Smaller jobs
+  (evaluation, few-shot) run on Cooper's laptop.
+- *The laptop had the slides but not the repo.* **Fix:** cloned it next to the decks,
+  rebuilt the 237 images with `tools/extract_slides.py` (same names as on Colab), and
+  copied predictions and weights from Google Drive for desktop (`G:\我的雲端硬碟`).
+  Packages go in a `.venv` in the clone, so the global Python stays unchanged.
+- *The laptop venv has CPU-only torch* (about 45 s per epoch for 10 slides at 1280).
+  It has an RTX 3050 4 GB, so installing CUDA torch would speed up later runs.
+
+**Next**
+- Finish the few-shot run and report base vs real vs mix.
+- Fix the 3 oversized icon labels and re-run the real-slide evaluation.
+- Label more slides from unseen decks if the few-shot gain is promising, since ~10
+  test slides per fold is noisy.
+
+---
+
+## 2026-11-26 — First real-slide mAP (20 hand-labelled NotebookLM slides)
+
+**Done**
+- Cooper labelled 20 slides spread over the 19 decks with `tools/labeler.py`
+  (392 boxes: title 17, text 189, shape 106, picture 12, icon 68).
+- Evaluated the 5 ratio-sweep models (last.pt, 1280 px) on them, on CPU on Cooper's PC.
+
+| R | real mAP@0.5 | real mAP@0.5:0.95 | text mAP@0.5:0.95 | shape | icon |
+|---|---|---|---|---|---|
+| 0.00 | 0.251 | 0.160 | 0.276 | 0.077 | 0.079 |
+| 0.20 | 0.286 | 0.199 | 0.370 | 0.114 | 0.103 |
+| 0.50 | **0.454** | **0.317** | **0.496** | **0.212** | **0.278** |
+| 0.80 | 0.259 | 0.170 | 0.317 | 0.099 | 0.150 |
+| 1.00 | 0.227 | 0.144 | 0.249 | 0.050 | 0.184 |
+
+- R=0.5 is best on every class. Synthetic scores are ~0.95+, so the sim-to-real gap is large.
+- Main loss is **recall**: text R=0.62 at best, shape 0.07-0.23. Precision is 0.5-0.8.
+
+**Issues & fixes**
+- 28 icon boxes are wider than 10% of the slide. At least 3 (Edgerunners_05, OS_12) look
+  like picture/shape. To review, then re-run the evaluation.
+- Only 12 pictures in the set, so picture numbers are noise.
+
+**Next**
+- Make synthetic slides look more like NotebookLM: hand-drawn and glowing shapes, sticky
+  notes, highlighter strokes, dark textured backgrounds, illustrated objects.
+- Retrain at R=0.5 and compare on these 20 slides.
+
+---
+
+## 2026-11-26 — Sweep trained on Colab, real slides checked, labelling tool
+
+**Done**
+- Ran the full ratio sweep on Colab (yolo11n, 1280 px, 30 epochs, 2,500 slides per pool).
+  mAP@0.5:0.95 template / random: R=0 0.960 / 0.756, R=0.2 0.960 / 0.962,
+  R=0.5 0.955 / 0.970, R=0.8 0.952 / 0.975, R=1 0.701 / 0.975.
+- Ran all 5 models on 237 unlabelled NotebookLM slides (19 decks).
+  `detector/compare_preds.py` reports boxes per slide, confidence and how much the
+  models agree with each other, plus side-by-side images.
+- `tools/labeler.py`: a local box editor that starts from predictions and writes YOLO txt
+  for `real_labels.py build`. It replaces CVAT as the default in `docs/labelling.md`.
+- Labelling rules for NotebookLM slides: a drawn diagram is one `picture`; a region too
+  complex to rebuild gets no box (background); text blocks matter most.
+
+**Issues & fixes**
+- *Real slides look very different from synthetic ones*: only 7-11 boxes per slide, and
+  the models agree on just 44-63% of boxes (F1), while all score above 0.95 mAP on synthetic data.
+  Small text inside drawn diagrams is mostly missed. **Fix:** hand-label 20 slides for a
+  real mAP. The diagram rule above settles what counts as a box.
+- *Ultralytics nested relative run paths* (`runs/detect/runs/...`). **Fix:** absolute `project` paths.
+
+**Next**
+- Label 20 slides, build `data/real/yolo`, evaluate all 5 models on real slides.
+
+---
+
 ## 2026-11-19 — Random-ratio experiment set up
 
 **Done**

@@ -12,6 +12,13 @@ import os
 
 from .data import local_yaml
 
+SLIDE_AUG = dict(
+    # geometry: slides are upright, left-to-right, and fill the frame
+    fliplr=0.0, flipud=0.0, degrees=0.0, shear=0.0, perspective=0.0, translate=0.05, scale=0.3, mixup=0.0,
+    # colour: themes vary a lot, so push hue/saturation more than the default
+    hsv_h=0.1, hsv_s=0.6, hsv_v=0.4,
+)
+
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -51,11 +58,7 @@ def main():
         data=data, epochs=a.epochs, imgsz=a.imgsz, batch=int(a.batch) if a.batch >= 1 else a.batch,
         rect=a.rect, device=a.device, workers=a.workers, cache=a.cache, patience=a.patience,
         project=os.path.abspath(a.project), name=a.name, seed=a.seed, fraction=a.fraction, exist_ok=False,
-        # geometry: slides are upright, left-to-right, and fill the frame
-        fliplr=0.0, flipud=0.0, degrees=0.0, shear=0.0, perspective=0.0,
-        translate=0.05, scale=0.3, mosaic=a.mosaic, close_mosaic=a.close_mosaic, mixup=0.0,
-        # colour: themes vary a lot, so push hue/saturation more than the default
-        hsv_h=0.1, hsv_s=0.6, hsv_v=0.4,
+        mosaic=a.mosaic, close_mosaic=a.close_mosaic, **SLIDE_AUG,
         augmentations=None if a.no_sim2real else sim2real(a.aug_strength),
     )
 
