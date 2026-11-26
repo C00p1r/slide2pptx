@@ -16,6 +16,7 @@ import os
 import numpy as np
 
 from . import CLASSES
+from .containers import find_cards
 from .postprocess import GROUP, clean, iou
 
 IOUS = np.linspace(0.5, 0.95, 10)
@@ -150,12 +151,13 @@ def main():
     ap.add_argument("--same-iou", type=float, default=0.5)
     ap.add_argument("--cross-iou", type=float, default=0.6)
     ap.add_argument("--contain", type=float, default=0.9)
+    ap.add_argument("--cards", action="store_true", help="also score detector.containers (shapes found behind text)")
     ap.add_argument("--sweep", default="0.05,0.1,0.15,0.2,0.25,0.35,0.5", help="conf values for the P/R/F1 table")
     ap.add_argument("--out", default=None, help="default: <pred>/evalpred.md")
     a = ap.parse_args()
     from PIL import Image
 
-    raw, post, full = [], [], []
+    raw, post, full, cards, both = [], [], [], [], []
     for p in sorted(glob.glob(os.path.join(a.pred, "*.json"))):
         d = json.load(open(p, encoding="utf-8"))
         stem = os.path.splitext(os.path.basename(p))[0]
@@ -167,9 +169,16 @@ def main():
         raw.append((d["detections"], gts))
         full.append((d["detections"], gts, W, H))
         post.append((clean(d["detections"], a.same_iou, a.cross_iou, a.contain), gts))
+        if a.cards:
+            new = find_cards(d["image"], [p for p in d["detections"] if p["conf"] >= a.conf])
+            cards.append((d["detections"] + new, gts))
+            both.append((clean(d["detections"] + new, a.same_iou, a.cross_iou, a.contain), gts))
     if not raw:
         raise SystemExit(f"no predictions in {a.pred} have a label in {a.labels}")
     rows = {"raw (YOLO NMS only)": score(raw, a.conf), "postprocess": score(post, a.conf)}
+    if a.cards:
+        rows["cards"] = score(cards, a.conf)
+        rows["cards + postprocess"] = score(both, a.conf)
     f = lambda v: f"{v:.3f}"   # noqa: E731
     md = [f"### {a.pred}: {len(raw)} slides (P / R / F1 / boxes / overlaps at conf >= {a.conf})", "",
           "| | mAP@0.5 | mAP@0.5:0.95 | P | R | F1 | boxes | overlapping pairs | "
@@ -182,6 +191,9 @@ def main():
            f"text inside text >= {a.contain}. Per-class columns are mAP@0.5:0.95.", ""]
     md += sweep(full, [float(x) for x in a.sweep.split(",")]) + [""]
     diag_md, diag = diagnose(full, a.conf)
+    if a.cards:
+        cdiag_md, rows["why_missed_cards"] = diagnose([(c[0],) + f[1:] for c, f in zip(cards, full)], a.conf)
+        diag_md += ["", "With cards:", ""] + cdiag_md[2:]
     md += diag_md
     rows["why_missed"] = diag
     text = "\n".join(md) + "\n"

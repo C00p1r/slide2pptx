@@ -10,6 +10,7 @@ import os
 from PIL import Image, ImageDraw
 
 from . import CLASSES
+from .containers import find_cards
 from .postprocess import clean
 
 COLORS = {"title": (230, 40, 40), "text": (40, 120, 255), "shape": (40, 180, 60),
@@ -34,6 +35,7 @@ def main():
     ap.add_argument("--imgsz", type=int, default=1280)
     ap.add_argument("--conf", type=float, default=0.25)
     ap.add_argument("--augment", action="store_true", help="test-time augmentation (multi-scale)")
+    ap.add_argument("--cards", action="store_true", help="add shapes found behind text (detector/containers.py)")
     ap.add_argument("--post", action="store_true", help="merge overlapping boxes (detector/postprocess.py)")
     ap.add_argument("--no-draw", action="store_true", help="only write the JSON")
     ap.add_argument("--yolo-txt", action="store_true",
@@ -47,6 +49,8 @@ def main():
     os.makedirs(a.out, exist_ok=True)
     for f in files:
         dets = detect(model, f, a.imgsz, a.conf, a.augment)
+        if a.cards:
+            dets = dets + find_cards(f, dets)
         if a.post:
             dets = clean(dets)
         stem = os.path.splitext(os.path.basename(f))[0]
