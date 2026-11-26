@@ -5,6 +5,148 @@ Newest entries at the top. Format: **Done** / **Issues & fixes** / **Next**.
 
 ---
 
+## 2026-11-27 — Using box relations: shapes found behind detected text
+
+**Done**
+- Cooper asked whether the model understands box relations (text usually sits on a shape).
+  It does not: YOLO predicts every box on its own. On the 20 real slides (R=0.5 base),
+  34 of 98 shape-with-text pairs had **only the text found**. Shapes with no text inside
+  are almost never found (1/35).
+- `detector/containers.py` (`find_cards`): for each detected text box, grow the region of
+  the colour just outside it and keep it as a `shape` (conf 0.30) if it contains the text,
+  is card-sized, mostly filled and has a colour edge. Synthetic check with true text boxes
+  as seeds: finds 91% of text-holding shapes, and 92% of what it adds is correct.
+  `evalpred --cards` / `predict --cards` use it.
+- Real slides, P / R / F1 at conf 0.25:
+
+| model (test slides) | | mAP@0.5:0.95 | P | R | F1 | shape mAP@0.5:0.95 | shape recall | only-text pairs |
+|---|---|---|---|---|---|---|---|---|
+| R=0.5 base (20) | raw | 0.333 | 0.818 | 0.446 | 0.578 | 0.206 | 0.24 | 34 |
+| | + cards | **0.347** | 0.821 | **0.480** | **0.605** | **0.275** | **0.36** | 21 |
+| fold 0 mix (10) | raw | 0.449 | 0.704 | 0.650 | 0.676 | 0.344 | 0.42 | 21 |
+| | + cards | 0.455 | 0.701 | 0.678 | 0.689 | 0.375 | 0.52 | 16 |
+| fold 1 mix (10) | raw | 0.304 | 0.555 | 0.555 | 0.555 | 0.287 | 0.40 | 12 |
+| | + cards | 0.309 | 0.560 | 0.579 | 0.569 | 0.310 | 0.50 | 6 |
+
+- Recall goes up with no loss in precision: 13 of the 15 cards it added on the base model
+  are correct (IoU 0.78-0.98). With `--post` as well, F1 is best (0.607 / 0.705 / 0.585).
+
+**Issues & fixes**
+- *Crash on Cooper's laptop*: `cv2.imread` cannot open Chinese file names on Windows.
+  **Fix:** `cv2.imdecode(np.fromfile(...))`.
+- *Wrong cards (2)*: a light gradient with a circuit pattern taken as a 37%-of-slide card, and
+  a striped block that was really an icon.
+- *Missed cards*: outline-only cards whose fill equals the background (white boxes on grid
+  paper), since step 2 skips them by design. Also cards whose text YOLO missed, which leaves
+  no seed. Possible next step: an outline mode (edges + rectangular contours around text).
+
+---
+
+## 2026-11-27 — Low recall: diagnosis and inference-time fixes
+
+**Done**
+- Ranked the usual fixes for high precision / low recall: inference (lower conf, larger
+  imgsz, TTA), data (more real labels, pseudo-labels, copy-paste / closer synthetic
+  styles), and model (bigger model, unfreeze more, P2 head). Tried the inference ones first,
+  since they cost no training. R=0.5 base, 20 slides; P/R/F1 at conf 0.25:
+
+| setting | mAP@0.5 | mAP@0.5:0.95 | P | R | F1 |
+|---|---|---|---|---|---|
+| **1280** | **0.460** | **0.333** | 0.818 | 0.446 | **0.578** |
+| 1600 | 0.357 | 0.223 | 0.642 | 0.398 | 0.491 |
+| 1920 | 0.298 | 0.198 | 0.580 | 0.380 | 0.459 |
+| 1280 + TTA | 0.423 | 0.294 | 0.713 | 0.474 | 0.570 |
+| 1600 + TTA | 0.464 | 0.332 | 0.634 | 0.495 | 0.556 |
+
+- None helps. Larger inputs hurt (title 0.554 -> 0.117 at 1920), because the model was
+  trained at 1280. TTA buys a little recall but loses more precision, also on the
+  fine-tuned models (fold 1 F1 0.555 -> 0.444). Lowering conf from 0.25 to 0.05 only moves
+  recall 0.446 -> 0.495. **Keep 1280, no TTA, conf 0.25.**
+- **Why boxes are missed** (`evalpred`, base, conf 0.25): of 218 misses, 194 have **no box
+  near them at all**, 20 have the wrong class and 3 are loose. Recall by class: title 0.71,
+  text 0.60, shape 0.24, picture 0.08, icon 0.34. Recall by size: small 0.37, medium 0.43,
+  large 0.51, so size is not the cause.
+- After few-shot (mix), recall is fold 0 0.67 / fold 1 0.56, and text recall 0.90 / 0.68.
+  Shape stays at ~0.40: most shape misses are still "nothing there".
+
+**Conclusion**
+- The model has not learned these styles. Inference tricks cannot recover them; only data can.
+  Real labels already work for text. Shapes (sticky notes, hand-drawn frames, neon outlines,
+  highlighter strokes) need many more examples, real or synthetic.
+- Pseudo-labelling can only add boxes the model already finds at some confidence. Lowering
+  conf from 0.25 to 0.05 recovers only ~20 of the 218 missed boxes, so its upside here is limited.
+
+---
+
+## 2026-11-27 — Overlapping boxes: post-processing tested
+
+**Done**
+- Cooper saw many overlapping boxes and suggested keeping only the most confident box when
+  IoU is high. Checked where overlaps come from on the 20 labelled slides (R=0.5, conf >= 0.25):
+  same-class duplicates 0 (YOLO's per-class NMS already removes them). Cross-class pairs
+  with IoU > 0.5: 13, mostly text on a card. The hand labels have 27 such pairs, so most are correct.
+- Class-agnostic NMS **hurts**: mAP@0.5 0.454 -> 0.433 (it deletes cards and their text).
+- `detector/postprocess.py`: merge only within {title, text} and within {shape, picture,
+  icon}, plus drop a text box lying inside another text box. `detector/evalpred.py`
+  scores saved predictions with and without it; `predict.py --post` applies it.
+
+| model (test slides) | | mAP@0.5:0.95 | P @0.25 | R @0.25 | F1 @0.25 | overlapping pairs |
+|---|---|---|---|---|---|---|
+| R=0.5 base (20) | raw | 0.333 | 0.818 | 0.446 | 0.578 | 4 |
+| | post | 0.327 | 0.833 | 0.444 | 0.579 | 1 |
+| fold 0 mix (10) | raw | 0.449 | 0.704 | 0.650 | 0.676 | 5 |
+| | post | 0.443 | 0.747 | 0.645 | 0.692 | 0 |
+| fold 1 mix (10) | raw | 0.304 | 0.555 | 0.555 | 0.555 | 7 |
+| | post | 0.290 | 0.581 | 0.550 | 0.565 | 0 |
+
+- Post-processing removes nearly all remaining overlaps and raises F1 a little (more for the
+  fine-tuned models), but costs 0.006-0.014 mAP. Other thresholds made no difference (< 0.001).
+  **Decision:** keep it opt-in (`--post`) for the boxes -> pptx step. Report mAP without it.
+
+**Issues & fixes**
+- *Title boxes lost in title/text merges* (fold 1 title 0.430 -> 0.371): the more confident
+  `text` box wins over the `title`. Possible fix: prefer `title` when merging.
+- The scorer uses predict's single-label NMS, so its raw mAP differs slightly from YOLO's
+  val (0.333 vs 0.317). Only compare raw vs post within it.
+
+**Next**
+- Recall, not overlap, is the bottleneck (0.45 base, 0.55-0.65 fine-tuned).
+
+---
+
+## 2026-11-27 — Few-shot results
+
+**Done**
+- `detector/fewshot.py` finished on Cooper's laptop: 2 folds by deck, ~10 train /
+  10 test slides each, 1 h 19 min on CPU. Mean over folds:
+
+| model | mAP@0.5 | mAP@0.5:0.95 | P | R | title | text | shape | picture | icon |
+|---|---|---|---|---|---|---|---|---|---|
+| base (R=0.5, no fine-tune) | 0.454 | 0.324 | 0.578 | 0.429 | 0.543 | 0.510 | 0.226 | 0.071 | 0.269 |
+| real (real slides only) | 0.481 | 0.353 | 0.734 | 0.451 | 0.629 | 0.522 | 0.317 | 0.054 | 0.245 |
+| **mix** (real + synthetic) | **0.497** | **0.370** | **0.810** | 0.451 | 0.590 | **0.569** | 0.316 | 0.058 | **0.317** |
+
+  Per fold mAP@0.5:0.95: fold 0 base 0.421 / real 0.415 / mix 0.434,
+  fold 1 base 0.226 / real 0.292 / mix 0.306.
+- **mix is best and beats base on both folds.** The gain is in **precision**
+  (0.58 -> 0.81), not recall (0.43 -> 0.45). Ten real slides teach the model what is
+  *not* an element, but not where the elements it misses are.
+- real alone slightly drops on fold 0 and loses icon AP, so mixing in synthetic slides
+  is what keeps the old skills.
+
+**Issues & fixes**
+- *Folds differ more than models* (base 0.42 vs 0.23 mAP@0.5:0.95). Fold 1 holds the
+  dark, textured, illustrated decks (cyberpunk, funk, Edgerunners). Treat gaps under
+  ~0.02 as ties.
+- Hyperparameters (freeze 10, lr 5e-4, 20 epochs) were fixed in advance, not tuned:
+  there is no validation split among 20 slides. Tuning needs more labels or nested CV.
+
+**Next**
+- Recall is the bottleneck. Options: more real labels for training, a lower confidence
+  threshold for the pptx step, or generator styles that match the missed elements.
+
+---
+
 ## 2026-11-26 (night) — Labelling rules settled, few-shot experiment started
 
 **Done**
