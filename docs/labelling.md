@@ -60,3 +60,8 @@ slide for *missing* boxes too, not only wrong ones, and redraw loose boxes tight
   as background: **no box at all**. It stays in the background image of the .pptx.
 - Text that sits on a sticky note or card *outside* a diagram is still `text`, and the
   note or card is a `shape`.
+- **Formula or big stylised text** (e.g. `A → aV*`): if you could type it on a keyboard,
+  it is one `text` box. Hand-drawn marks on it (a red circle, an underline swoosh) get no box.
+- **Clip-art objects** (a thumbs-up, a scanner, a lightbulb) are `icon` when they are a
+  single small object, roughly square and under about 10% of the slide width. A scene
+  or a drawing with several parts is `picture`.
