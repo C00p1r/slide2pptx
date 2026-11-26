@@ -70,3 +70,7 @@ slide for *missing* boxes too, not only wrong ones, and redraw loose boxes tight
 - **Clip-art objects** (a thumbs-up, a scanner, a lightbulb) are `icon` when they are a
   single small object, roughly square and under about 10% of the slide width. A scene
   or a drawing with several parts is `picture`.
+- **Photo collages:** each photo is `picture` (a stack of polaroids counts as one).
+  Large props that only serve as a backdrop (an open book, a desk, a wall texture) get
+  no box. Paper notes and torn-paper labels that carry text are `shape` (text on them is
+  `text`), and the pins holding them get no box.
