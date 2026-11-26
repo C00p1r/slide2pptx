@@ -16,9 +16,9 @@ COLORS = {"title": (230, 40, 40), "text": (40, 120, 255), "shape": (40, 180, 60)
           "picture": (255, 150, 0), "icon": (200, 40, 200)}
 
 
-def detect(model, path, imgsz=1280, conf=0.25):
+def detect(model, path, imgsz=1280, conf=0.25, augment=False):
     """-> list of dict(cls, conf, bbox=[x, y, w, h]) in pixels of the original image."""
-    r = model.predict(path, imgsz=imgsz, conf=conf, verbose=False)[0]
+    r = model.predict(path, imgsz=imgsz, conf=conf, augment=augment, verbose=False)[0]
     out = []
     for (x1, y1, x2, y2), c, k in zip(r.boxes.xyxy.tolist(), r.boxes.conf.tolist(), r.boxes.cls.tolist()):
         out.append(dict(cls=CLASSES[int(k)], conf=round(c, 3),
@@ -33,6 +33,7 @@ def main():
     ap.add_argument("--out", default="results/pred")
     ap.add_argument("--imgsz", type=int, default=1280)
     ap.add_argument("--conf", type=float, default=0.25)
+    ap.add_argument("--augment", action="store_true", help="test-time augmentation (multi-scale)")
     ap.add_argument("--post", action="store_true", help="merge overlapping boxes (detector/postprocess.py)")
     ap.add_argument("--no-draw", action="store_true", help="only write the JSON")
     ap.add_argument("--yolo-txt", action="store_true",
@@ -45,7 +46,7 @@ def main():
         f for e in ("png", "jpg", "jpeg", "webp") for f in glob.glob(os.path.join(a.src, f"*.{e}")))
     os.makedirs(a.out, exist_ok=True)
     for f in files:
-        dets = detect(model, f, a.imgsz, a.conf)
+        dets = detect(model, f, a.imgsz, a.conf, a.augment)
         if a.post:
             dets = clean(dets)
         stem = os.path.splitext(os.path.basename(f))[0]
