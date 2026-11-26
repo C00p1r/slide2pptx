@@ -5,6 +5,39 @@ Newest entries at the top. Format: **Done** / **Issues & fixes** / **Next**.
 
 ---
 
+## 2026-11-27 — Few-shot results
+
+**Done**
+- `detector/fewshot.py` finished on Cooper's laptop: 2 folds by deck, ~10 train /
+  10 test slides each, 1 h 19 min on CPU. Mean over folds:
+
+| model | mAP@0.5 | mAP@0.5:0.95 | P | R | title | text | shape | picture | icon |
+|---|---|---|---|---|---|---|---|---|---|
+| base (R=0.5, no fine-tune) | 0.454 | 0.324 | 0.578 | 0.429 | 0.543 | 0.510 | 0.226 | 0.071 | 0.269 |
+| real (real slides only) | 0.481 | 0.353 | 0.734 | 0.451 | 0.629 | 0.522 | 0.317 | 0.054 | 0.245 |
+| **mix** (real + synthetic) | **0.497** | **0.370** | **0.810** | 0.451 | 0.590 | **0.569** | 0.316 | 0.058 | **0.317** |
+
+  Per fold mAP@0.5:0.95: fold 0 base 0.421 / real 0.415 / mix 0.434,
+  fold 1 base 0.226 / real 0.292 / mix 0.306.
+- **mix is best and beats base on both folds.** The gain is in **precision**
+  (0.58 -> 0.81), not recall (0.43 -> 0.45). Ten real slides teach the model what is
+  *not* an element, but not where the elements it misses are.
+- real alone slightly drops on fold 0 and loses icon AP, so mixing in synthetic slides
+  is what keeps the old skills.
+
+**Issues & fixes**
+- *Folds differ more than models* (base 0.42 vs 0.23 mAP@0.5:0.95). Fold 1 holds the
+  dark, textured, illustrated decks (cyberpunk, funk, Edgerunners). Treat gaps under
+  ~0.02 as ties.
+- Hyperparameters (freeze 10, lr 5e-4, 20 epochs) were fixed in advance, not tuned:
+  there is no validation split among 20 slides. Tuning needs more labels or nested CV.
+
+**Next**
+- Recall is the bottleneck. Options: more real labels for training, a lower confidence
+  threshold for the pptx step, or generator styles that match the missed elements.
+
+---
+
 ## 2026-11-26 (night) — Labelling rules settled, few-shot experiment started
 
 **Done**
