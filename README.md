@@ -48,6 +48,10 @@ to narrow the gap between clean synthetic renders and real NotebookLM images. Ad
 `--no-sim2real` to train the ablation without it. `evaluate.py` writes a per-class
 mAP@0.5 / mAP@0.5:0.95 table to `results/detector/<tag>.md`, and `compare.py` puts
 several runs into one table (e.g. training-set or augmentation comparisons).
+
+**Experiment:** how the share of random-layout training slides changes real-slide
+accuracy. Plan: [`docs/experiments.md`](docs/experiments.md); `detector/mix.py` builds
+the training sets, `detector/sweep.py` makes the table and plot.
 `data.yaml` is rewritten to wherever the dataset currently is, so moving it is fine.
 
 ## Real test slides (NotebookLM)
