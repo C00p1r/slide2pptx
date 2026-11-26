@@ -54,9 +54,13 @@ slide for *missing* boxes too, not only wrong ones, and redraw loose boxes tight
 ### NotebookLM slides (decided 2026-11-26)
 - **Text first.** Getting every text block right matters most: these are what become
   editable text boxes in the .pptx. Check the slide for missed text before anything else.
-- **Could PowerPoint rebuild it with a basic shape** (rectangle, rounded box, circle,
-  line, arrow) plus a fill or border? Then it is `shape`, even with glow, gradient or
-  transparency (e.g. neon rings, a semi-transparent card). A diagram built from such
+- **One test for `shape`:** the outline is a basic shape (rectangle, rounded box, circle,
+  bar, line, arrow) **and** it is filled or drawn mostly in one flat colour. Glow,
+  transparency, a shadow, rough or torn edges, a slight tilt or a sketchy outline are fine
+  (neon rings, a semi-transparent card, a sticky note, a yellow highlighter stroke, a
+  hand-drawn box). Whether text sits on it does not change the class.
+  Visible hatching, shading or several colours inside (a hatched brush arrow, a paper
+  clip) fail the test: small -> `icon`, large -> `picture`. A diagram built from such
   shapes plus text is labelled part by part: each shape `shape`, each label `text`.
 - A **painted or drawn illustration** (shading, texture, 3D, hand-drawn) counts as
   **one `picture`** box. Do not box the parts inside it or its small words.
@@ -72,5 +76,7 @@ slide for *missing* boxes too, not only wrong ones, and redraw loose boxes tight
   or a drawing with several parts is `picture`.
 - **Photo collages:** each photo is `picture` (a stack of polaroids counts as one).
   Large props that only serve as a backdrop (an open book, a desk, a wall texture) get
-  no box. Paper notes and torn-paper labels that carry text are `shape` (text on them is
+  no box. Sticky notes and torn-paper labels are `shape` by the test above (text on them is
   `text`), and the pins holding them get no box.
+- **Decorative textures** (hatching, ink splatter, grid paper) get no box.
+- A symbol you can type (`⊢`, `→`, `∑`) is `text`, even when drawn large.
