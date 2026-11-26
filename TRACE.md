@@ -5,6 +5,36 @@ Newest entries at the top. Format: **Done** / **Issues & fixes** / **Next**.
 
 ---
 
+## 2026-11-26 — First real-slide mAP (20 hand-labelled NotebookLM slides)
+
+**Done**
+- Cooper labelled 20 slides spread over the 19 decks with `tools/labeler.py`
+  (392 boxes: title 17, text 189, shape 106, picture 12, icon 68).
+- Evaluated the 5 ratio-sweep models (last.pt, 1280 px) on them, on CPU on Cooper's PC.
+
+| R | real mAP@0.5 | real mAP@0.5:0.95 | text mAP@0.5:0.95 | shape | icon |
+|---|---|---|---|---|---|
+| 0.00 | 0.251 | 0.160 | 0.276 | 0.077 | 0.079 |
+| 0.20 | 0.286 | 0.199 | 0.370 | 0.114 | 0.103 |
+| 0.50 | **0.454** | **0.317** | **0.496** | **0.212** | **0.278** |
+| 0.80 | 0.259 | 0.170 | 0.317 | 0.099 | 0.150 |
+| 1.00 | 0.227 | 0.144 | 0.249 | 0.050 | 0.184 |
+
+- R=0.5 is best on every class. Synthetic scores are ~0.95+, so the sim-to-real gap is large.
+- Main loss is **recall**: text R=0.62 at best, shape 0.07-0.23. Precision is 0.5-0.8.
+
+**Issues & fixes**
+- 28 icon boxes are wider than 10% of the slide. At least 3 (Edgerunners_05, OS_12) look
+  like picture/shape. To review, then re-run the evaluation.
+- Only 12 pictures in the set, so picture numbers are noise.
+
+**Next**
+- Make synthetic slides look more like NotebookLM: hand-drawn and glowing shapes, sticky
+  notes, highlighter strokes, dark textured backgrounds, illustrated objects.
+- Retrain at R=0.5 and compare on these 20 slides.
+
+---
+
 ## 2026-11-26 — Sweep trained on Colab, real slides checked, labelling tool
 
 **Done**
