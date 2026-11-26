@@ -1,0 +1,331 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Slide labeler</title>
+<style>
+  :root {
+    --bg: #f4f4f2; --panel: #ffffff; --ink: #1d1d1b; --muted: #6b6b66; --line: #deded9;
+    --accent: #2a78d6; --done: #1baf7a;
+    --c-title: #d6402a; --c-text: #2a78d6; --c-shape: #eb8a14; --c-picture: #1baf7a; --c-icon: #a046d6;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--ink);
+    font: 13px/1.4 system-ui, "Segoe UI", "Microsoft JhengHei", sans-serif; }
+  body { display: grid; grid-template-columns: 240px 1fr; grid-template-rows: auto 1fr; height: 100vh; }
+  header { grid-column: 1 / 3; display: flex; align-items: center; gap: 12px; padding: 8px 12px;
+    background: var(--panel); border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+  header h1 { font-size: 14px; margin: 0; font-weight: 600; }
+  #name { font-weight: 600; max-width: 40vw; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #src { color: var(--muted); }
+  .classes { display: flex; gap: 6px; }
+  .cls { border: 2px solid var(--c); background: transparent; color: var(--ink); border-radius: 6px;
+    padding: 3px 9px; cursor: pointer; font: inherit; }
+  .cls.on { background: var(--c); color: #fff; }
+  .cls kbd { opacity: .7; margin-right: 4px; }
+  .spacer { flex: 1; }
+  button.act { font: inherit; padding: 4px 10px; border-radius: 6px; border: 1px solid var(--line);
+    background: var(--panel); cursor: pointer; }
+  button.act.primary { background: var(--accent); color: #fff; border-color: var(--accent); }
+  aside { background: var(--panel); border-right: 1px solid var(--line); overflow: auto; }
+  #progress { padding: 10px 12px; border-bottom: 1px solid var(--line); }
+  #bar { height: 6px; background: var(--line); border-radius: 3px; margin-top: 6px; overflow: hidden; }
+  #bar i { display: block; height: 100%; background: var(--done); width: 0; }
+  #list { list-style: none; margin: 0; padding: 4px 0; }
+  #list li { padding: 4px 12px; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #list li:hover { background: var(--bg); }
+  #list li.cur { background: #e3eefb; font-weight: 600; }
+  #list li .ok { display: inline-block; width: 16px; color: var(--done); }
+  main { position: relative; overflow: hidden; }
+  canvas { display: block; width: 100%; height: 100%; cursor: crosshair; }
+  #help { position: absolute; right: 10px; bottom: 10px; background: rgba(255,255,255,.94);
+    border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; color: var(--muted);
+    font-size: 12px; line-height: 1.6; pointer-events: none; }
+  #help b { color: var(--ink); font-weight: 600; }
+  #toast { position: absolute; left: 50%; top: 10px; transform: translateX(-50%); background: var(--ink);
+    color: #fff; padding: 4px 12px; border-radius: 6px; opacity: 0; transition: opacity .2s; pointer-events: none; }
+  #counts { color: var(--muted); }
+</style>
+</head>
+<body>
+<header>
+  <h1>Slide labeler</h1>
+  <span id="name"></span><span id="src"></span>
+  <div class="classes" id="classes"></div>
+  <span id="counts"></span>
+  <span class="spacer"></span>
+  <button class="act" id="prev">← 上一張 (A)</button>
+  <button class="act primary" id="next">存檔並下一張 (D)</button>
+</header>
+<aside>
+  <div id="progress"><span id="ptext"></span><div id="bar"><i></i></div></div>
+  <ul id="list"></ul>
+</aside>
+<main>
+  <canvas id="cv"></canvas>
+  <div id="toast"></div>
+  <div id="help">
+    <b>拖曳</b> 畫新框（在框裡面也可以） · <b>點一下</b> 選框 · 拖曳選中框 移動 / 拉角落 縮放<br>
+    <b>1–5</b> 換類別 · <b>Del / X</b> 刪除 · <b>Ctrl+Z</b> 復原 · <b>Esc</b> 取消選取 · <b>Tab</b> 下一個框<br>
+    <b>D / Enter</b> 存檔並下一張 · <b>A</b> 上一張 · <b>H</b> 隱藏框 · <b>滾輪</b> 縮放 · <b>右鍵拖曳</b> 平移 · <b>F</b> 重設視角<br>
+    虛線框 = 模型信心低，請特別確認 · <b>?</b> 隱藏這個說明
+  </div>
+</main>
+<script>
+const COLORS = {};
+const cv = document.getElementById("cv"), ctx = cv.getContext("2d");
+const S = { classes: [], slides: [], idx: -1, img: null, W: 0, H: 0, boxes: [], sel: -1, cur: "text",
+  undo: [], dirty: false, source: "", hide: false, view: { s: 1, ox: 0, oy: 0 }, drag: null, busy: false };
+
+const css = n => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+const toast = msg => { const t = document.getElementById("toast"); t.textContent = msg; t.style.opacity = 1;
+  clearTimeout(toast.h); toast.h = setTimeout(() => t.style.opacity = 0, 1200); };
+
+async function api(path, body) {
+  const r = await fetch(path, body ? { method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body) } : {});
+  if (!r.ok) throw new Error(path + " -> " + r.status);
+  return r.json();
+}
+
+async function init() {
+  const d = await api("/api/list");
+  S.classes = d.classes; S.slides = d.slides;
+  for (const c of S.classes) COLORS[c] = css("--c-" + c) || "#888";
+  const box = document.getElementById("classes");
+  S.classes.forEach((c, i) => {
+    const b = document.createElement("button");
+    b.className = "cls"; b.dataset.cls = c; b.style.setProperty("--c", COLORS[c]);
+    b.innerHTML = `<kbd>${i + 1}</kbd>${c}`;
+    b.onclick = () => setClass(c);
+    box.appendChild(b);
+  });
+  renderList();
+  const first = S.slides.findIndex(s => !s.done);
+  await go(first < 0 ? 0 : first);
+}
+
+function renderList() {
+  const ul = document.getElementById("list"); ul.innerHTML = "";
+  S.slides.forEach((s, i) => {
+    const li = document.createElement("li");
+    li.className = i === S.idx ? "cur" : "";
+    li.innerHTML = `<span class="ok">${s.done ? "✓" : ""}</span>`;
+    li.appendChild(document.createTextNode(s.stem));
+    li.title = s.stem;
+    li.onclick = () => go(i, false);
+    ul.appendChild(li);
+  });
+  const n = S.slides.filter(s => s.done).length;
+  document.getElementById("ptext").textContent = `完成 ${n} / ${S.slides.length}`;
+  document.querySelector("#bar i").style.width = (100 * n / Math.max(1, S.slides.length)) + "%";
+  const cur = ul.children[S.idx]; if (cur) cur.scrollIntoView({ block: "nearest" });
+}
+
+function loadImage(src) {
+  return new Promise((ok, bad) => { const im = new Image(); im.onload = () => ok(im); im.onerror = bad; im.src = src; });
+}
+
+async function go(i, saveFirst = true) {
+  if (S.busy || i < 0 || i >= S.slides.length) return;
+  S.busy = true;
+  try {
+    if (S.idx >= 0 && (S.dirty || saveFirst)) await save();
+    const s = S.slides[i], enc = encodeURIComponent(s.stem);
+    const [im, d] = await Promise.all([loadImage("/img/" + enc), api("/api/boxes/" + enc)]);
+    S.idx = i; S.img = im; S.W = im.naturalWidth; S.H = im.naturalHeight;
+    S.boxes = d.boxes.map(b => {
+      let [x, y, w, h] = b.bbox;
+      if (d.norm) { x *= S.W; y *= S.H; w *= S.W; h *= S.H; }
+      return { cls: b.cls, x, y, w, h, conf: b.conf ?? 1 };
+    });
+    S.source = d.source; S.sel = -1; S.undo = []; S.dirty = false;
+    document.getElementById("name").textContent = s.stem;
+    document.getElementById("src").textContent =
+      { label: "· 已標註", pred: "· 從模型預測開始", none: "· 沒有預測，從空白開始" }[d.source];
+    fit(); renderList();
+  } catch (e) { toast("錯誤：" + e.message); }
+  S.busy = false;
+}
+
+async function save() {
+  const boxes = S.boxes.map(b => ({ cls: b.cls, bbox: [b.x / S.W, b.y / S.H, b.w / S.W, b.h / S.H] }));
+  const r = await api("/api/save/" + encodeURIComponent(S.slides[S.idx].stem), { boxes });
+  S.slides[S.idx].done = true; S.dirty = false; S.source = "label";
+  toast(`已存檔：${r.saved} 個框`);
+}
+
+/* ---------- view ---------- */
+function resize() {
+  const r = cv.getBoundingClientRect(), dpr = window.devicePixelRatio || 1;
+  cv.width = Math.round(r.width * dpr); cv.height = Math.round(r.height * dpr);
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+}
+function fit() {
+  resize();
+  const r = cv.getBoundingClientRect(), pad = 16;
+  const s = Math.min((r.width - 2 * pad) / S.W, (r.height - 2 * pad) / S.H);
+  S.view = { s, ox: (r.width - S.W * s) / 2, oy: (r.height - S.H * s) / 2 };
+  draw();
+}
+const toImg = (px, py) => [(px - S.view.ox) / S.view.s, (py - S.view.oy) / S.view.s];
+const toScr = (x, y) => [S.view.ox + x * S.view.s, S.view.oy + y * S.view.s];
+
+function draw() {
+  const r = cv.getBoundingClientRect();
+  ctx.clearRect(0, 0, r.width, r.height);
+  if (!S.img) return;
+  const { s, ox, oy } = S.view;
+  ctx.drawImage(S.img, ox, oy, S.W * s, S.H * s);
+  if (!S.hide) S.boxes.forEach((b, i) => drawBox(b, i === S.sel));
+  const d = S.drag;
+  if (d && d.mode === "create") {
+    const [x0, y0] = toScr(Math.min(d.x0, d.x1), Math.min(d.y0, d.y1));
+    ctx.setLineDash([]); ctx.lineWidth = 2; ctx.strokeStyle = COLORS[S.cur];
+    ctx.strokeRect(x0, y0, Math.abs(d.x1 - d.x0) * s, Math.abs(d.y1 - d.y0) * s);
+  }
+  const c = {}; S.boxes.forEach(b => c[b.cls] = (c[b.cls] || 0) + 1);
+  document.getElementById("counts").textContent =
+    `${S.boxes.length} 個框` + (S.boxes.length ? "：" + S.classes.filter(k => c[k]).map(k => `${k} ${c[k]}`).join("、") : "");
+  document.querySelectorAll(".cls").forEach(b => b.classList.toggle("on", b.dataset.cls === S.cur));
+}
+
+function drawBox(b, sel) {
+  const [x, y] = toScr(b.x, b.y), w = b.w * S.view.s, h = b.h * S.view.s, col = COLORS[b.cls];
+  ctx.setLineDash(b.conf < 0.5 ? [6, 4] : []);
+  ctx.lineWidth = sel ? 3 : 2; ctx.strokeStyle = col;
+  ctx.fillStyle = col + (sel ? "33" : "14");
+  ctx.fillRect(x, y, w, h); ctx.strokeRect(x, y, w, h);
+  ctx.setLineDash([]);
+  ctx.font = "11px system-ui, sans-serif";
+  const tag = b.conf < 1 ? `${b.cls} ${b.conf.toFixed(2)}` : b.cls, tw = ctx.measureText(tag).width + 6;
+  ctx.fillStyle = col; ctx.fillRect(x, y - 14 < 0 ? y : y - 14, tw, 14);
+  ctx.fillStyle = "#fff"; ctx.fillText(tag, x + 3, (y - 14 < 0 ? y : y - 14) + 11);
+  if (sel) handles(b).forEach(([hx, hy]) => {
+    ctx.fillStyle = "#fff"; ctx.strokeStyle = col; ctx.lineWidth = 2;
+    ctx.fillRect(hx - 4, hy - 4, 8, 8); ctx.strokeRect(hx - 4, hy - 4, 8, 8);
+  });
+}
+
+/* 8 handles in screen px: corners then edges; each knows which sides it moves */
+const HANDLE_SIDES = [["l","t"],["r","t"],["l","b"],["r","b"],["t"],["b"],["l"],["r"]];
+function handles(b) {
+  const [x, y] = toScr(b.x, b.y), w = b.w * S.view.s, h = b.h * S.view.s;
+  return [[x, y], [x + w, y], [x, y + h], [x + w, y + h], [x + w / 2, y], [x + w / 2, y + h], [x, y + h / 2], [x + w, y + h / 2]];
+}
+
+/* ---------- editing ---------- */
+const snapshot = () => { S.undo.push(JSON.stringify(S.boxes)); if (S.undo.length > 100) S.undo.shift(); };
+const touched = () => { S.dirty = true; };
+function setClass(c) {
+  S.cur = c;
+  if (S.sel >= 0 && S.boxes[S.sel].cls !== c) { snapshot(); S.boxes[S.sel].cls = c; S.boxes[S.sel].conf = 1; touched(); }
+  draw();
+}
+function pickBox(x, y) {   // smallest box under the point, so inner text wins over its card
+  let best = -1, area = Infinity;
+  S.boxes.forEach((b, i) => {
+    if (x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h && b.w * b.h < area) { best = i; area = b.w * b.h; }
+  });
+  return best;
+}
+const clampBox = b => {
+  if (b.w < 0) { b.x += b.w; b.w = -b.w; }
+  if (b.h < 0) { b.y += b.h; b.h = -b.h; }
+  b.x = Math.max(0, b.x); b.y = Math.max(0, b.y);
+  b.w = Math.min(b.w, S.W - b.x); b.h = Math.min(b.h, S.H - b.y);
+};
+
+const pos = e => { const r = cv.getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top]; };
+cv.addEventListener("contextmenu", e => e.preventDefault());
+cv.addEventListener("mousedown", e => {
+  if (!S.img) return;
+  const [px, py] = pos(e), [x, y] = toImg(px, py);
+  if (e.button === 1 || e.button === 2 || S.space) {
+    S.drag = { mode: "pan", px, py, ox: S.view.ox, oy: S.view.oy }; return;
+  }
+  if (e.button !== 0) return;
+  if (S.sel >= 0 && !S.hide) {
+    const b = S.boxes[S.sel], hs = handles(b);
+    const k = hs.findIndex(([hx, hy]) => Math.abs(px - hx) <= 7 && Math.abs(py - hy) <= 7);
+    if (k >= 0) { snapshot(); S.drag = { mode: "resize", sides: HANDLE_SIDES[k], orig: { ...b }, x0: x, y0: y }; return; }
+    if (x >= b.x && x <= b.x + b.w && y >= b.y && y <= b.y + b.h) {
+      snapshot(); S.drag = { mode: "move", orig: { ...b }, x0: x, y0: y, moved: false, px, py }; return;
+    }
+  }
+  S.drag = { mode: "pending", x0: x, y0: y, x1: x, y1: y, px, py };
+});
+window.addEventListener("mousemove", e => {
+  const d = S.drag; if (!d) return;
+  const [px, py] = pos(e), [x, y] = toImg(px, py);
+  if (d.mode === "pan") { S.view.ox = d.ox + px - d.px; S.view.oy = d.oy + py - d.py; }
+  else if (d.mode === "pending" && Math.hypot(px - d.px, py - d.py) > 4) { d.mode = "create"; d.x1 = x; d.y1 = y; }
+  else if (d.mode === "create") { d.x1 = Math.min(Math.max(x, 0), S.W); d.y1 = Math.min(Math.max(y, 0), S.H); }
+  else if (d.mode === "move") {
+    if (Math.hypot(px - d.px, py - d.py) > 2) d.moved = true;
+    const b = S.boxes[S.sel], o = d.orig;
+    b.x = Math.min(Math.max(o.x + x - d.x0, 0), S.W - o.w); b.y = Math.min(Math.max(o.y + y - d.y0, 0), S.H - o.h);
+  } else if (d.mode === "resize") {
+    const b = S.boxes[S.sel], o = d.orig, dx = x - d.x0, dy = y - d.y0;
+    Object.assign(b, { x: o.x, y: o.y, w: o.w, h: o.h });
+    if (d.sides.includes("l")) { b.x = o.x + dx; b.w = o.w - dx; }
+    if (d.sides.includes("r")) { b.w = o.w + dx; }
+    if (d.sides.includes("t")) { b.y = o.y + dy; b.h = o.h - dy; }
+    if (d.sides.includes("b")) { b.h = o.h + dy; }
+  }
+  draw();
+});
+window.addEventListener("mouseup", () => {
+  const d = S.drag; if (!d) return; S.drag = null;
+  if (d.mode === "pending") {        // a click: select what is under it
+    S.sel = S.hide ? -1 : pickBox(d.x0, d.y0);
+    if (S.sel >= 0) S.cur = S.boxes[S.sel].cls;
+  } else if (d.mode === "create") {
+    const b = { cls: S.cur, x: Math.min(d.x0, d.x1), y: Math.min(d.y0, d.y1), w: Math.abs(d.x1 - d.x0), h: Math.abs(d.y1 - d.y0), conf: 1 };
+    if (b.w >= 3 && b.h >= 3) { snapshot(); S.boxes.push(b); S.sel = S.boxes.length - 1; touched(); }
+  } else if (d.mode === "move") {
+    if (d.moved) { S.boxes[S.sel].conf = 1; touched(); } else S.undo.pop();
+  } else if (d.mode === "resize") {
+    clampBox(S.boxes[S.sel]); S.boxes[S.sel].conf = 1; touched();
+  }
+  draw();
+});
+cv.addEventListener("wheel", e => {
+  e.preventDefault();
+  const [px, py] = pos(e), [x, y] = toImg(px, py);
+  S.view.s *= Math.exp(-e.deltaY * 0.0015);
+  S.view.ox = px - x * S.view.s; S.view.oy = py - y * S.view.s;
+  draw();
+}, { passive: false });
+
+window.addEventListener("keydown", e => {
+  if (e.target.tagName === "INPUT") return;
+  const k = e.key.toLowerCase();
+  if (e.key === " ") { S.space = true; e.preventDefault(); return; }
+  if ((e.ctrlKey || e.metaKey) && k === "z") { e.preventDefault();
+    if (S.undo.length) { S.boxes = JSON.parse(S.undo.pop()); S.sel = -1; touched(); draw(); } return; }
+  if ((e.ctrlKey || e.metaKey) && k === "s") { e.preventDefault(); save().then(renderList); return; }
+  if (e.ctrlKey || e.metaKey || e.altKey) return;
+  const n = parseInt(e.key, 10);
+  if (n >= 1 && n <= S.classes.length) return setClass(S.classes[n - 1]);
+  if (k === "delete" || k === "backspace" || k === "x") {
+    if (S.sel >= 0) { snapshot(); S.boxes.splice(S.sel, 1); S.sel = -1; touched(); draw(); } e.preventDefault(); return;
+  }
+  if (k === "d" || k === "enter" || k === "arrowright") { e.preventDefault(); return go(S.idx + 1 < S.slides.length ? S.idx + 1 : S.idx); }
+  if (k === "a" || k === "arrowleft") { e.preventDefault(); return go(S.idx - 1, false); }
+  if (k === "escape") { S.sel = -1; draw(); return; }
+  if (k === "tab") { e.preventDefault(); if (S.boxes.length) { S.sel = (S.sel + (e.shiftKey ? -1 + S.boxes.length : 1)) % S.boxes.length; S.cur = S.boxes[S.sel].cls; draw(); } return; }
+  if (k === "h") { S.hide = !S.hide; draw(); return; }
+  if (k === "f") { fit(); return; }
+  if (e.key === "?" || e.key === "/") { const h = document.getElementById("help"); h.hidden = !h.hidden; return; }
+});
+window.addEventListener("keyup", e => { if (e.key === " ") S.space = false; });
+window.addEventListener("resize", () => S.img && fit());
+window.addEventListener("beforeunload", e => { if (S.dirty) { e.preventDefault(); e.returnValue = ""; } });
+document.getElementById("next").onclick = () => go(S.idx + 1 < S.slides.length ? S.idx + 1 : S.idx);
+document.getElementById("prev").onclick = () => go(S.idx - 1, false);
+init().catch(e => toast("無法連到 labeler.py：" + e.message));
+</script>
+</body>
+</html>

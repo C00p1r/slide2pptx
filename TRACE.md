@@ -5,6 +5,32 @@ Newest entries at the top. Format: **Done** / **Issues & fixes** / **Next**.
 
 ---
 
+## 2026-11-26 — Sweep trained on Colab, real slides checked, labelling tool
+
+**Done**
+- Ran the full ratio sweep on Colab (yolo11n, 1280 px, 30 epochs, 2,500 slides per pool).
+  mAP@0.5:0.95 template / random: R=0 0.960 / 0.756, R=0.2 0.960 / 0.962,
+  R=0.5 0.955 / 0.970, R=0.8 0.952 / 0.975, R=1 0.701 / 0.975.
+- Ran all 5 models on 237 unlabelled NotebookLM slides (19 decks).
+  `detector/compare_preds.py` reports boxes per slide, confidence and how much the
+  models agree with each other, plus side-by-side images.
+- `tools/labeler.py`: a local box editor that starts from predictions and writes YOLO txt
+  for `real_labels.py build`. It replaces CVAT as the default in `docs/labelling.md`.
+- Labelling rules for NotebookLM slides: a drawn diagram is one `picture`; a region too
+  complex to rebuild gets no box (background); text blocks matter most.
+
+**Issues & fixes**
+- *Real slides look very different from synthetic ones*: only 7-11 boxes per slide, and
+  the models agree on just 44-63% of boxes (F1), while all score above 0.95 mAP on synthetic data.
+  Small text inside drawn diagrams is mostly missed. **Fix:** hand-label 20 slides for a
+  real mAP. The diagram rule above settles what counts as a box.
+- *Ultralytics nested relative run paths* (`runs/detect/runs/...`). **Fix:** absolute `project` paths.
+
+**Next**
+- Label 20 slides, build `data/real/yolo`, evaluate all 5 models on real slides.
+
+---
+
 ## 2026-11-19 — Random-ratio experiment set up
 
 **Done**
