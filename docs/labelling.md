@@ -54,8 +54,13 @@ slide for *missing* boxes too, not only wrong ones, and redraw loose boxes tight
 ### NotebookLM slides (decided 2026-11-26)
 - **Text first.** Getting every text block right matters most: these are what become
   editable text boxes in the .pptx. Check the slide for missed text before anything else.
-- A **drawn diagram or illustration** counts as **one `picture`** box. Do not box the
-  parts inside it, and do not box its small words as `text`.
+- **Could PowerPoint rebuild it with a basic shape** (rectangle, rounded box, circle,
+  line, arrow) plus a fill or border? Then it is `shape`, even with glow, gradient or
+  transparency (e.g. neon rings, a semi-transparent card). A diagram built from such
+  shapes plus text is labelled part by part: each shape `shape`, each label `text`.
+- A **painted or drawn illustration** (shading, texture, 3D, hand-drawn) counts as
+  **one `picture`** box. Do not box the parts inside it or its small words.
+  A small single drawn object (a brush-stroke arrow, a stack of boxes) is `icon`.
 - When a region is **too complex to rebuild** (many stacked or overlapping layers), treat it
   as background: **no box at all**. It stays in the background image of the .pptx.
 - Text that sits on a sticky note or card *outside* a diagram is still `text`, and the
