@@ -10,6 +10,7 @@ import os
 from PIL import Image, ImageDraw
 
 from . import CLASSES
+from .postprocess import clean
 
 COLORS = {"title": (230, 40, 40), "text": (40, 120, 255), "shape": (40, 180, 60),
           "picture": (255, 150, 0), "icon": (200, 40, 200)}
@@ -32,6 +33,8 @@ def main():
     ap.add_argument("--out", default="results/pred")
     ap.add_argument("--imgsz", type=int, default=1280)
     ap.add_argument("--conf", type=float, default=0.25)
+    ap.add_argument("--post", action="store_true", help="merge overlapping boxes (detector/postprocess.py)")
+    ap.add_argument("--no-draw", action="store_true", help="only write the JSON")
     ap.add_argument("--yolo-txt", action="store_true",
                     help="also write YOLO .txt files (pre-labels to correct by hand, see docs/labelling.md)")
     a = ap.parse_args()
@@ -43,9 +46,14 @@ def main():
     os.makedirs(a.out, exist_ok=True)
     for f in files:
         dets = detect(model, f, a.imgsz, a.conf)
+        if a.post:
+            dets = clean(dets)
         stem = os.path.splitext(os.path.basename(f))[0]
-        with open(os.path.join(a.out, f"{stem}.json"), "w") as fh:
-            json.dump(dict(image=f, detections=dets), fh, indent=1)
+        with open(os.path.join(a.out, f"{stem}.json"), "w", encoding="utf-8") as fh:
+            json.dump(dict(image=os.path.abspath(f), detections=dets), fh, indent=1, ensure_ascii=False)
+        print(f"{stem}: {len(dets)} boxes")
+        if a.no_draw and not a.yolo_txt:
+            continue
         img = Image.open(f).convert("RGB")
         if a.yolo_txt:
             W, H = img.size
@@ -59,8 +67,8 @@ def main():
             x, y, w, h = det["bbox"]
             d.rectangle([x, y, x + w, y + h], outline=COLORS[det["cls"]], width=lw)
             d.text((x + 3, y + 2), f"{det['cls']} {det['conf']:.2f}", fill=COLORS[det["cls"]])
-        img.save(os.path.join(a.out, f"{stem}.jpg"), quality=90)
-        print(f"{stem}: {len(dets)} boxes")
+        if not a.no_draw:
+            img.save(os.path.join(a.out, f"{stem}.jpg"), quality=90)
 
 
 if __name__ == "__main__":
