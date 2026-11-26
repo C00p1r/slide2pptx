@@ -5,6 +5,42 @@ Newest entries at the top. Format: **Done** / **Issues & fixes** / **Next**.
 
 ---
 
+## 2026-11-27 — Overlapping boxes: post-processing tested
+
+**Done**
+- Cooper saw many overlapping boxes and suggested keeping only the most confident box when
+  IoU is high. Checked where overlaps come from on the 20 labelled slides (R=0.5, conf >= 0.25):
+  same-class duplicates 0 (YOLO's per-class NMS already removes them). Cross-class pairs
+  with IoU > 0.5: 13, mostly text on a card. The hand labels have 27 such pairs, so most are correct.
+- Class-agnostic NMS **hurts**: mAP@0.5 0.454 -> 0.433 (it deletes cards and their text).
+- `detector/postprocess.py`: merge only within {title, text} and within {shape, picture,
+  icon}, plus drop a text box lying inside another text box. `detector/evalpred.py`
+  scores saved predictions with and without it; `predict.py --post` applies it.
+
+| model (test slides) | | mAP@0.5:0.95 | P @0.25 | R @0.25 | F1 @0.25 | overlapping pairs |
+|---|---|---|---|---|---|---|
+| R=0.5 base (20) | raw | 0.333 | 0.818 | 0.446 | 0.578 | 4 |
+| | post | 0.327 | 0.833 | 0.444 | 0.579 | 1 |
+| fold 0 mix (10) | raw | 0.449 | 0.704 | 0.650 | 0.676 | 5 |
+| | post | 0.443 | 0.747 | 0.645 | 0.692 | 0 |
+| fold 1 mix (10) | raw | 0.304 | 0.555 | 0.555 | 0.555 | 7 |
+| | post | 0.290 | 0.581 | 0.550 | 0.565 | 0 |
+
+- Post-processing removes nearly all remaining overlaps and raises F1 a little (more for the
+  fine-tuned models), but costs 0.006-0.014 mAP. Other thresholds made no difference (< 0.001).
+  **Decision:** keep it opt-in (`--post`) for the boxes -> pptx step. Report mAP without it.
+
+**Issues & fixes**
+- *Title boxes lost in title/text merges* (fold 1 title 0.430 -> 0.371): the more confident
+  `text` box wins over the `title`. Possible fix: prefer `title` when merging.
+- The scorer uses predict's single-label NMS, so its raw mAP differs slightly from YOLO's
+  val (0.333 vs 0.317). Only compare raw vs post within it.
+
+**Next**
+- Recall, not overlap, is the bottleneck (0.45 base, 0.55-0.65 fine-tuned).
+
+---
+
 ## 2026-11-27 — Few-shot results
 
 **Done**
