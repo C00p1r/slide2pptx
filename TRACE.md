@@ -5,6 +5,42 @@ Newest entries at the top. Format: **Done** / **Issues & fixes** / **Next**.
 
 ---
 
+## 2026-11-27 — Low recall: diagnosis and inference-time fixes
+
+**Done**
+- Ranked the usual fixes for high precision / low recall: inference (lower conf, larger
+  imgsz, TTA), data (more real labels, pseudo-labels, copy-paste / closer synthetic
+  styles), and model (bigger model, unfreeze more, P2 head). Tried the inference ones first,
+  since they cost no training. R=0.5 base, 20 slides; P/R/F1 at conf 0.25:
+
+| setting | mAP@0.5 | mAP@0.5:0.95 | P | R | F1 |
+|---|---|---|---|---|---|
+| **1280** | **0.460** | **0.333** | 0.818 | 0.446 | **0.578** |
+| 1600 | 0.357 | 0.223 | 0.642 | 0.398 | 0.491 |
+| 1920 | 0.298 | 0.198 | 0.580 | 0.380 | 0.459 |
+| 1280 + TTA | 0.423 | 0.294 | 0.713 | 0.474 | 0.570 |
+| 1600 + TTA | 0.464 | 0.332 | 0.634 | 0.495 | 0.556 |
+
+- None helps. Larger inputs hurt (title 0.554 -> 0.117 at 1920), because the model was
+  trained at 1280. TTA buys a little recall but loses more precision, also on the
+  fine-tuned models (fold 1 F1 0.555 -> 0.444). Lowering conf from 0.25 to 0.05 only moves
+  recall 0.446 -> 0.495. **Keep 1280, no TTA, conf 0.25.**
+- **Why boxes are missed** (`evalpred`, base, conf 0.25): of 218 misses, 194 have **no box
+  near them at all**, 20 have the wrong class and 3 are loose. Recall by class: title 0.71,
+  text 0.60, shape 0.24, picture 0.08, icon 0.34. Recall by size: small 0.37, medium 0.43,
+  large 0.51, so size is not the cause.
+- After few-shot (mix), recall is fold 0 0.67 / fold 1 0.56, and text recall 0.90 / 0.68.
+  Shape stays at ~0.40: most shape misses are still "nothing there".
+
+**Conclusion**
+- The model has not learned these styles. Inference tricks cannot recover them; only data can.
+  Real labels already work for text. Shapes (sticky notes, hand-drawn frames, neon outlines,
+  highlighter strokes) need many more examples, real or synthetic.
+- Pseudo-labelling can only add boxes the model already finds at some confidence. Since
+  ~90% of misses have no box even at conf 0.05, its upside here is limited.
+
+---
+
 ## 2026-11-27 — Overlapping boxes: post-processing tested
 
 **Done**
