@@ -36,8 +36,8 @@ Newest entries at the top. Format: **Done** / **Issues & fixes** / **Next**.
 - The model has not learned these styles. Inference tricks cannot recover them; only data can.
   Real labels already work for text. Shapes (sticky notes, hand-drawn frames, neon outlines,
   highlighter strokes) need many more examples, real or synthetic.
-- Pseudo-labelling can only add boxes the model already finds at some confidence. Since
-  ~90% of misses have no box even at conf 0.05, its upside here is limited.
+- Pseudo-labelling can only add boxes the model already finds at some confidence. Lowering
+  conf from 0.25 to 0.05 recovers only ~20 of the 218 missed boxes, so its upside here is limited.
 
 ---
 
