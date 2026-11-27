@@ -8,4 +8,7 @@ matplotlib
 ultralytics>=8.3.200
 albumentations>=2.0
 pyyaml
+# two-level box detection (boxseg/, experimental branch)
+opencv-python-headless
+torch
 # step 3+ will add: paddleocr
