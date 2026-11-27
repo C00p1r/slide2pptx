@@ -9,7 +9,7 @@ network cannot rely on style and has to learn geometry: "this is a closed region
 One call to `scene(rng)` returns:
     image   HxWx3 uint8
     inside  HxW   uint8  1 where a pixel belongs to any box (outline included)
-    edge    HxW   uint8  1 on the boundary between two boxes or a box and background
+    edge    HxW   uint8  1 on a box/background boundary, 2 on a box/box boundary
     inst    HxW   int32  visible instance map, 0 = background, k = boxes[k-1]
     boxes   list of dict(box=[x0,y0,x1,y1], group=g, kind=..., style=[...])
 
@@ -469,14 +469,27 @@ def scene(rng, W=512, H=288, exclude=(), bg_files=()):
 
 
 def _instance_edges(inst, width=2):
-    e = np.zeros(inst.shape, bool)
-    e[:, 1:] |= inst[:, 1:] != inst[:, :-1]
-    e[:, :-1] |= inst[:, 1:] != inst[:, :-1]
-    e[1:, :] |= inst[1:, :] != inst[:-1, :]
-    e[:-1, :] |= inst[1:, :] != inst[:-1, :]
+    """1 = boundary between a box and the background, 2 = boundary between two boxes.
+
+    Box/box boundaries (a card and its header, a badge on its label) are what splits
+    nested boxes apart, and they are rare and low-contrast, so the loss weights them up
+    (the same idea as the border weight map in the original U-Net paper).
+    """
+    def diff(a, b):
+        return a != b, (a != b) & (a > 0) & (b > 0)
+    e, inner = np.zeros(inst.shape, bool), np.zeros(inst.shape, bool)
+    for a, b, sa, sb in [(inst[:, 1:], inst[:, :-1], np.s_[:, 1:], np.s_[:, :-1]),
+                         (inst[1:, :], inst[:-1, :], np.s_[1:, :], np.s_[:-1, :])]:
+        d, di = diff(a, b)
+        e[sa] |= d
+        e[sb] |= d
+        inner[sa] |= di
+        inner[sb] |= di
     if width > 1:
-        e = cv2.dilate(e.astype(np.uint8), np.ones((width, width), np.uint8)) > 0
-    return e.astype(np.uint8)
+        k = np.ones((width, width), np.uint8)
+        e = cv2.dilate(e.astype(np.uint8), k) > 0
+        inner = cv2.dilate(inner.astype(np.uint8), k) > 0
+    return (e.astype(np.uint8) + (inner & e)).astype(np.uint8)
 
 
 def _degrade(rng, img):

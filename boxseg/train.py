@@ -33,6 +33,8 @@ def main():
     ap.add_argument("--workers", type=int, default=max(1, (os.cpu_count() or 2) - 1))
     ap.add_argument("--exclude-styles", nargs="*", default=[])
     ap.add_argument("--bg-dir", default=None, help="optional folder of real slide images used as blurred backgrounds")
+    ap.add_argument("--inner-weight", type=float, default=5.0,
+                    help="extra loss weight on box/box boundaries (0 = plain edge loss, as in the first run)")
     ap.add_argument("--resume", default="auto",
                     help="'auto' (default): continue from <out>/<name>.pt if it exists, skip if it is finished; "
                          "'no': start over; or a path to a checkpoint to start from (weights only)")
@@ -43,7 +45,7 @@ def main():
     dev = "cuda" if torch.cuda.is_available() else "cpu"
     if a.level == "seg":
         model = UNet(base=a.base)
-        ds = SegStream(W, H, a.exclude_styles, a.bg_dir)
+        ds = SegStream(W, H, a.exclude_styles, a.bg_dir, inner_weight=a.inner_weight)
     else:
         model = PairNet()
         ds = PairStream(W, H, a.exclude_styles)
@@ -83,8 +85,8 @@ def main():
         batch = [t.to(dev, non_blocking=True) for t in batch]
         with torch.autocast(dev, enabled=dev == "cuda"):
             if a.level == "seg":
-                img, inside, edge = batch
-                loss = seg_loss(model(img).float(), inside, edge)
+                img, inside, edge, edge_w = batch
+                loss = seg_loss(model(img).float(), inside, edge, edge_w)
             else:
                 x, geo, y = batch
                 loss = torch.nn.functional.binary_cross_entropy_with_logits(model(x, geo).float(), y)

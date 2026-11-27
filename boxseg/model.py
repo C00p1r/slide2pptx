@@ -39,12 +39,13 @@ class UNet(nn.Module):
         return self.head(x)                                  # logits: [inside, edge]
 
 
-def seg_loss(logits, inside, edge, edge_weight=5.0):
-    """BCE + soft Dice on both maps; edges are rare, so they get a larger positive weight."""
+def seg_loss(logits, inside, edge, edge_w=None, edge_weight=5.0):
+    """BCE + soft Dice on both maps. Edges are rare, so they get a larger positive weight;
+    edge_w (per pixel) further boosts box/box boundaries, which separate nested boxes."""
     loss = 0
-    for k, (y, pw) in enumerate([(inside, 1.0), (edge, edge_weight)]):
+    for k, (y, pw, w) in enumerate([(inside, 1.0, None), (edge, edge_weight, edge_w)]):
         z = logits[:, k]
-        loss = loss + F.binary_cross_entropy_with_logits(z, y, pos_weight=torch.tensor(pw, device=z.device))
+        loss = loss + F.binary_cross_entropy_with_logits(z, y, weight=w, pos_weight=torch.tensor(pw, device=z.device))
         p = torch.sigmoid(z)
         inter = (p * y).sum((1, 2))
         loss = loss + (1 - (2 * inter + 1) / (p.sum((1, 2)) + y.sum((1, 2)) + 1)).mean()

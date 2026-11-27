@@ -19,18 +19,20 @@ def to_tensor(img):
 
 
 class SegStream(IterableDataset):
-    """(image, inside, edge) triples for Level 1."""
+    """(image, inside, edge, edge_weight) for Level 1. edge_weight boosts box/box boundaries."""
 
-    def __init__(self, W=512, H=288, exclude=(), bg_dir=None, seed=0):
+    def __init__(self, W=512, H=288, exclude=(), bg_dir=None, seed=0, inner_weight=5.0):
         self.W, self.H, self.exclude, self.seed = W, H, tuple(exclude), seed
+        self.inner_weight = inner_weight
         self.bg = sorted(glob.glob(f"{bg_dir}/*.png") + glob.glob(f"{bg_dir}/*.jpg")) if bg_dir else []
 
     def __iter__(self):
         rng = _rng(self.seed)
         while True:
             s = scene(rng, self.W, self.H, self.exclude, self.bg)
+            e = torch.from_numpy(s["edge"])
             yield (to_tensor(s["image"]), torch.from_numpy(s["inside"]).float(),
-                   torch.from_numpy(s["edge"]).float())
+                   (e > 0).float(), 1 + self.inner_weight * (e == 2).float())
 
 
 # ------------------------------------------------------------------ Level 2 pairs
