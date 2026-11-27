@@ -64,7 +64,19 @@ python -m boxseg.train group --steps 4000 --batch 64 --out runs/boxseg
 python -m boxseg.evaluate --seg runs/boxseg/seg.pt --group runs/boxseg/group.pt --n 300
 python -m boxseg.predict runs/boxseg/seg.pt data/real/images --group runs/boxseg/group.pt --baseline
 ```
-On Colab: `notebooks/train_boxseg.ipynb`.
+### On Colab (the main way to train)
+`notebooks/train_boxseg.ipynb` runs everything as **one background job** with
+`tools/colab_job.py`, so it does not depend on the browser page:
+
+- the job is started with `setsid`/`nohup`; closing or reloading the page, or the page losing its
+  connection, does not stop it. Its log is `runs/boxseg/boxseg.log` on Drive;
+- `boxseg.train` saves model + optimiser + LR schedule every 250 steps (`--save-every`) and, by
+  default (`--resume auto`), continues from that checkpoint or skips a finished stage;
+- so after a runtime reset you run cells 1-3 again and lose at most 250 steps.
+  Starting a job that is already running does nothing, so re-running cells is always safe.
+
+`tools/colab_job.py start|status|stop NAME --dir DIR -- "<command>"` works for any long job
+(the YOLO sweep too), from a notebook cell or the Colab terminal.
 
 ## Known limits / open decisions
 - **What is a group?** Here: one widget. A big panel containing several cards is its own group,
