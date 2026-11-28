@@ -69,3 +69,20 @@ scene while true positives only count the hand/sticky ones.
   into one large box: the generator has no tables/grids of touching cells yet;
 - illustrations and photos (spine drawing, gauge pictures) are also marked as regions, since
   the generator draws no pictures or icons yet.
+
+## Real NotebookLM slides: the 20 hand-labelled test slides
+`python -m boxseg.eval_real runs/boxseg/seg.pt data/real/yolo --size 768x432`. Labels are the
+same 392 boxes used for the YOLO real-slide mAP. The U-Net has no classes, so this is
+class-agnostic recall at IoU 0.5 per labelled class. "matches any label" is the share of predicted
+boxes that match some labelled box (a rough precision).
+
+| method | size | shape R (106) | picture R (12) | icon R (68) | shape+picture+icon R | matches any label |
+|---|---|---|---|---|---|---|
+| U-Net v2 | 512x288 | 0.528 | 0.500 | 0.250 | 0.409 | 0.335 of 233 |
+| **U-Net v2** | **768x432** | **0.604** | **0.583** | 0.324 | **0.484** | 0.305 of 308 |
+| contours | 768x432 | 0.500 | 0.250 | 0.471 | 0.462 | 0.061 of 2081 |
+| YOLO R=0.5 (class-aware, for reference) | 1280 | 0.226 | 0.250 | 0.368 | | P 0.70 / 0.36 / 0.48 |
+
+The YOLO row is its per-class recall from `results/detector/ratio_r0.50_real.md`; YOLO must also get
+the class right, so it is a stricter test than class-agnostic matching. Text and titles are not
+regions (recall 0.10 and 0.12, as intended).
