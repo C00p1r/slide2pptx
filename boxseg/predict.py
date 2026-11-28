@@ -21,8 +21,7 @@ from PIL import Image
 from slidegen.content import hsv
 
 from .boxes import contour_baseline, masks_to_boxes
-from .evaluate import group_boxes, load_unet, predict_maps
-from .model import PairNet
+from .evaluate import group_boxes, load_pairnet, load_unet, predict_maps
 
 
 def main():
@@ -39,9 +38,7 @@ def main():
     W, H = ck.get("size", [512, 288])
     pairnet = None
     if a.group:
-        pairnet = PairNet()
-        pairnet.load_state_dict(torch.load(a.group, map_location="cpu")["model"])
-        pairnet.to(dev).eval()
+        pairnet = load_pairnet(a.group, dev)
     os.makedirs(a.out, exist_ok=True)
     files = sorted(f for f in glob.glob(os.path.join(a.images, "*")) if f.lower().endswith((".png", ".jpg", ".jpeg")))
     for f in files:

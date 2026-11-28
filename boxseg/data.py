@@ -21,18 +21,19 @@ def to_tensor(img):
 class SegStream(IterableDataset):
     """(image, inside, edge, edge_weight) for Level 1. edge_weight boosts box/box boundaries."""
 
-    def __init__(self, W=512, H=288, exclude=(), bg_dir=None, seed=0, inner_weight=5.0):
+    def __init__(self, W=512, H=288, exclude=(), bg_dir=None, seed=0, inner_weight=5.0, extras=True):
         self.W, self.H, self.exclude, self.seed = W, H, tuple(exclude), seed
-        self.inner_weight = inner_weight
+        self.inner_weight, self.extras = inner_weight, extras
         self.bg = sorted(glob.glob(f"{bg_dir}/*.png") + glob.glob(f"{bg_dir}/*.jpg")) if bg_dir else []
 
     def __iter__(self):
         rng = _rng(self.seed)
         while True:
-            s = scene(rng, self.W, self.H, self.exclude, self.bg)
+            s = scene(rng, self.W, self.H, self.exclude, self.bg, extras=self.extras)
             e = torch.from_numpy(s["edge"])
             yield (to_tensor(s["image"]), torch.from_numpy(s["inside"]).float(),
-                   (e > 0).float(), 1 + self.inner_weight * (e == 2).float())
+                   (e > 0).float(), 1 + self.inner_weight * (e == 2).float(),
+                   torch.from_numpy(s["text"]).float())
 
 
 # ------------------------------------------------------------------ Level 2 pairs
@@ -92,28 +93,98 @@ def jitter(rng, box, f=0.03):
 
 
 class PairStream(IterableDataset):
-    """(crop, geo, same_group) for Level 2, from ground-truth boxes with small jitter."""
+    """(crop, geo, label) for Level 2, from ground-truth boxes with small jitter.
 
-    def __init__(self, W=512, H=288, exclude=(), seed=1, per_scene=16):
+    three_way (v3): label 0 = unrelated, 1 = same object (parts of one icon),
+    2 = same group but different objects (card + its text). Text blocks take part too.
+    Otherwise (v2): label 1.0 = same group.
+    """
+
+    def __init__(self, W=512, H=288, exclude=(), seed=1, per_scene=16, three_way=True):
+        self.W, self.H, self.exclude, self.seed, self.k = W, H, tuple(exclude), seed, per_scene
+        self.three_way = three_way
+
+    def __iter__(self):
+        rng = _rng(self.seed)
+        while True:
+            s = scene(rng, self.W, self.H, self.exclude, extras=self.three_way)
+            bx = s["boxes"] + (s["texts"] if self.three_way else [])
+            pairs = candidate_pairs([b["box"] for b in bx], self.W, self.H)
+            if not pairs:
+                continue
+
+            def label(p):
+                a, b = bx[p[0]], bx[p[1]]
+                if not self.three_way:
+                    return int(a["group"] == b["group"])
+                return 1 if a["obj"] == b["obj"] else (2 if a["group"] == b["group"] else 0)
+            by = {}
+            for p in pairs:
+                by.setdefault(label(p), []).append(p)
+            pick = []                                       # roughly balanced classes
+            for lst in by.values():
+                pick += [lst[i] for i in rng.choice(len(lst), min(len(lst), self.k // len(by)), replace=False)]
+            for p in pick:
+                i, j = p if rng.random() < 0.5 else p[::-1]
+                x, geo = pair_input(s["image"], jitter(rng, bx[i]["box"]), jitter(rng, bx[j]["box"]))
+                lab = label(p)
+                yield (torch.from_numpy(x), torch.from_numpy(geo),
+                       torch.tensor(lab) if self.three_way else torch.tensor(float(lab)))
+
+
+# ------------------------------------------------------------------ object classifier
+
+OBJ_SIZE = 64
+
+
+def obj_input(img, box, size=OBJ_SIZE, ctx=2.5):
+    """4-channel context crop (RGB + object mask), ctx times the object's size, + 6 geometry numbers."""
+    H, W = img.shape[:2]
+    x0, y0, x1, y1 = [float(v) for v in box[:4]]
+    cx, cy = (x0 + x1) / 2, (y0 + y1) / 2
+    s = max(x1 - x0, y1 - y0, 8) * ctx / 2                  # square crop, keeps the shape's aspect
+    X0, Y0, X1, Y1 = cx - s, cy - s, cx + s, cy + s
+    pad = int(np.ceil(max(0, -X0, -Y0, X1 - W, Y1 - H))) + 1
+    im = cv2.copyMakeBorder(img, pad, pad, pad, pad, cv2.BORDER_REPLICATE)
+    crop = im[int(Y0) + pad:int(Y1) + pad, int(X0) + pad:int(X1) + pad]
+    crop = cv2.resize(crop, (size, size), interpolation=cv2.INTER_AREA).astype(np.float32) / 255
+    m = np.zeros((size, size), np.float32)
+    k = size / (2 * s)
+    m[int((y0 - Y0) * k):int(np.ceil((y1 - Y0) * k)), int((x0 - X0) * k):int(np.ceil((x1 - X0) * k))] = 1
+    x = np.concatenate([crop.transpose(2, 0, 1), m[None]], 0)
+    w, h = max(1.0, x1 - x0), max(1.0, y1 - y0)
+    geo = np.array([w / W, h / H, np.log(w / h), cx / W, cy / H, np.log(w * h / (W * H))], np.float32)
+    return x, geo
+
+
+def objects(s):
+    """Ground-truth objects of a scene: (union box, class id) per object id."""
+    from .model import OBJ_CLASSES
+    by = {}
+    for b in s["boxes"] + s["texts"]:
+        o = by.setdefault(b["obj"], [list(b["box"]), b["cls"]])
+        o[0] = [min(o[0][0], b["box"][0]), min(o[0][1], b["box"][1]),
+                max(o[0][2], b["box"][2]), max(o[0][3], b["box"][3])]
+    return [(box, OBJ_CLASSES.index(c)) for box, c in by.values()]
+
+
+class ObjStream(IterableDataset):
+    """(crop, geo, class) for the object classifier, from ground-truth objects with jitter."""
+
+    def __init__(self, W=512, H=288, exclude=(), seed=2, per_scene=12):
         self.W, self.H, self.exclude, self.seed, self.k = W, H, tuple(exclude), seed, per_scene
 
     def __iter__(self):
         rng = _rng(self.seed)
         while True:
             s = scene(rng, self.W, self.H, self.exclude)
-            bx = s["boxes"]
-            pairs = candidate_pairs([b["box"] for b in bx], self.W, self.H)
-            if not pairs:
-                continue
-            pos = [p for p in pairs if bx[p[0]]["group"] == bx[p[1]]["group"]]
-            neg = [p for p in pairs if bx[p[0]]["group"] != bx[p[1]]["group"]]
-            pick = []                                       # roughly balanced classes
-            for lst in (pos, neg):
-                if lst:
-                    pick += [lst[i] for i in rng.choice(len(lst), min(len(lst), self.k // 2), replace=False)]
-            for i, j in pick:
-                if rng.random() < 0.5:
-                    i, j = j, i
-                x, geo = pair_input(s["image"], jitter(rng, bx[i]["box"]), jitter(rng, bx[j]["box"]))
-                yield (torch.from_numpy(x), torch.from_numpy(geo),
-                       torch.tensor(float(bx[i]["group"] == bx[j]["group"])))
+            obs = objects(s)
+            by = {}
+            for o in obs:
+                by.setdefault(o[1], []).append(o)
+            pick = []                                     # balance classes (text is very common)
+            for lst in by.values():
+                pick += [lst[i] for i in rng.choice(len(lst), min(len(lst), max(1, self.k // len(by))), replace=False)]
+            for box, c in pick:
+                x, geo = obj_input(s["image"], jitter(rng, box, 0.05))
+                yield torch.from_numpy(x), torch.from_numpy(geo), torch.tensor(c)

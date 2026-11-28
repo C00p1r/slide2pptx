@@ -83,3 +83,55 @@ def contour_baseline(img, min_side=8, canny=(50, 150)):
         if fill > 0.5:                                   # closed and box-like enough
             out.append([x, y, x + w, y + h, fill])
     return nms(np.array(out, np.float32).reshape(-1, 5), 0.8)
+
+
+def text_to_boxes(text, thr=0.5, min_side=4):
+    """Text map -> text blocks. Lines of one paragraph are joined by a small closing."""
+    H, W = text.shape
+    m = (text > thr).astype(np.uint8)
+    k = cv2.getStructuringElement(cv2.MORPH_RECT, (max(3, int(W * 0.012)), max(3, int(H * 0.03))))
+    m = cv2.morphologyEx(m, cv2.MORPH_CLOSE, k)
+    n, lab, stats, _ = cv2.connectedComponentsWithStats(m, connectivity=8)
+    out = []
+    for i in range(1, n):
+        x, y, w, h, area = stats[i]
+        if w < min_side or h < min_side:
+            continue
+        out.append([x, y, x + w, y + h, float(text[lab == i].mean())])
+    return np.array(out, np.float32).reshape(-1, 5)
+
+
+def ap_per_class(per_image, n_cls, thr=0.5):
+    """per_image: list of (pred_boxes (N,4), pred_cls (N,), pred_score (N,), gt_boxes (M,4), gt_cls (M,)).
+    Returns AP@thr per class (nan for classes with no ground truth)."""
+    aps = []
+    for c in range(n_cls):
+        dets, n_gt = [], 0
+        for k, (pb, pc, ps, gb, gc) in enumerate(per_image):
+            n_gt += int((gc == c).sum())
+            for b, s in zip(pb[pc == c], ps[pc == c]):
+                dets.append((s, k, b))
+        if n_gt == 0:
+            aps.append(float("nan"))
+            continue
+        dets.sort(key=lambda d: -d[0])
+        used = [np.zeros(int((g[4] == c).sum()), bool) for g in per_image]
+        tp = np.zeros(len(dets))
+        for i, (s, k, b) in enumerate(dets):
+            g = per_image[k][3][per_image[k][4] == c]
+            if len(g):
+                iou = iou_matrix(b[None], g)[0]
+                j = int(iou.argmax())
+                if iou[j] >= thr and not used[k][j]:
+                    used[k][j] = True
+                    tp[i] = 1
+        ctp = np.cumsum(tp)
+        rec = ctp / n_gt
+        prec = ctp / np.arange(1, len(dets) + 1)
+        mrec = np.r_[0, rec, 1]
+        mpre = np.r_[1, prec, 0]
+        for i in range(len(mpre) - 2, -1, -1):
+            mpre[i] = max(mpre[i], mpre[i + 1])
+        idx = np.where(mrec[1:] != mrec[:-1])[0]
+        aps.append(float(((mrec[idx + 1] - mrec[idx]) * mpre[idx + 1]).sum()))
+    return aps

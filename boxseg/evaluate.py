@@ -25,15 +25,24 @@ from .synth import scene
 
 def load_unet(path, dev):
     ck = torch.load(path, map_location="cpu")
-    m = UNet(base=ck.get("base", 32))
+    m = UNet(base=ck.get("base", 32), out=ck["model"]["head.weight"].shape[0])
     m.load_state_dict(ck["model"])
     return m.to(dev).eval(), ck
 
 
 @torch.no_grad()
-def predict_maps(model, img, dev):
+def predict_maps(model, img, dev, with_text=False):
     p = torch.sigmoid(model(to_tensor(img)[None].to(dev)))[0].cpu().numpy()
+    if with_text:
+        return p[0], p[1], (p[2] if len(p) > 2 else np.zeros_like(p[0]))
     return p[0], p[1]
+
+
+def load_pairnet(path, dev):
+    sd = torch.load(path, map_location="cpu")["model"]
+    m = PairNet(n_out=sd["mlp.3.weight"].shape[0])
+    m.load_state_dict(sd)
+    return m.to(dev).eval()
 
 
 @torch.no_grad()
@@ -52,8 +61,11 @@ def group_boxes(pairnet, img, boxes, dev, thr=0.5):
     probs = {}
     if pairs:
         xs, gs = zip(*[pair_input(img, boxes[i], boxes[j]) for i, j in pairs])
-        p = torch.sigmoid(pairnet(torch.from_numpy(np.stack(xs)).to(dev),
-                                  torch.from_numpy(np.stack(gs)).to(dev))).cpu().numpy()
+        out = pairnet(torch.from_numpy(np.stack(xs)).to(dev), torch.from_numpy(np.stack(gs)).to(dev))
+        if out.dim() == 1:                          # v2: P(same group)
+            p = torch.sigmoid(out).cpu().numpy()
+        else:                                       # v3: P(same object) + P(same group)
+            p = torch.softmax(out, 1)[:, 1:].sum(1).cpu().numpy()
         for (i, j), q in zip(pairs, p):
             probs[(i, j)] = float(q)
             if q > thr:
@@ -87,6 +99,7 @@ def main():
     ap.add_argument("--only-styles", nargs="*", default=[],
                     help="count only GT boxes that have at least one of these styles")
     ap.add_argument("--report", default=None)
+    ap.add_argument("--v2", action="store_true", help="test on v2 scenes (no tables/pictures/icons)")
     a = ap.parse_args()
 
     dev = "cuda" if torch.cuda.is_available() else "cpu"
@@ -94,16 +107,14 @@ def main():
     W, H = ck.get("size", [512, 288])
     pairnet = None
     if a.group:
-        pairnet = PairNet()
-        pairnet.load_state_dict(torch.load(a.group, map_location="cpu")["model"])
-        pairnet.to(dev).eval()
+        pairnet = load_pairnet(a.group, dev)
 
     rng = np.random.default_rng(a.seed)
     stats = {m: defaultdict(float) for m in ("unet", "contours")}
     by_style = {m: defaultdict(lambda: [0, 0]) for m in ("unet", "contours")}
     grp = {k: np.zeros(4) for k in ("gt_boxes", "unet_boxes")}
     for _ in range(a.n):
-        s = scene(rng, W, H)
+        s = scene(rng, W, H, extras=not a.v2)
         gt = np.array([b["box"] for b in s["boxes"]], np.float32).reshape(-1, 4)
         relevant = [i for i, b in enumerate(s["boxes"])
                     if not a.only_styles or set(b["style"]) & set(a.only_styles)]

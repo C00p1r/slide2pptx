@@ -17,12 +17,13 @@ import torch
 from torch.utils.data import DataLoader
 
 from .data import PairStream, SegStream
-from .model import PairNet, UNet, seg_loss
+from .data import ObjStream
+from .model import ClsNet, PairNet, UNet, seg_loss, OBJ_CLASSES, PAIR_CLASSES
 
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("level", choices=["seg", "group"])
+    ap.add_argument("level", choices=["seg", "group", "cls"])
     ap.add_argument("--out", default="runs/boxseg")
     ap.add_argument("--name", default=None, help="checkpoint name (default: level name)")
     ap.add_argument("--steps", type=int, default=6000)
@@ -38,17 +39,26 @@ def main():
     ap.add_argument("--resume", default="auto",
                     help="'auto' (default): continue from <out>/<name>.pt if it exists, skip if it is finished; "
                          "'no': start over; or a path to a checkpoint to start from (weights only)")
+    ap.add_argument("--v2", action="store_true",
+                    help="v2 data and models: no tables/pictures/icons, no text channel, 2-way grouping")
+    ap.add_argument("--init-from", default=None,
+                    help="start a new run from another checkpoint's weights; layers whose shape changed "
+                         "(e.g. the U-Net head growing a text channel) keep the overlapping part")
     ap.add_argument("--save-every", type=int, default=250, help="checkpoint every N steps (Colab disconnects)")
     a = ap.parse_args()
 
     W, H = map(int, a.size.split("x"))
     dev = "cuda" if torch.cuda.is_available() else "cpu"
+    v3 = not a.v2
     if a.level == "seg":
-        model = UNet(base=a.base)
-        ds = SegStream(W, H, a.exclude_styles, a.bg_dir, inner_weight=a.inner_weight)
+        model = UNet(base=a.base, out=3 if v3 else 2)
+        ds = SegStream(W, H, a.exclude_styles, a.bg_dir, inner_weight=a.inner_weight, extras=v3)
+    elif a.level == "group":
+        model = PairNet(n_out=len(PAIR_CLASSES) if v3 else 1)
+        ds = PairStream(W, H, a.exclude_styles, three_way=v3)
     else:
-        model = PairNet()
-        ds = PairStream(W, H, a.exclude_styles)
+        model = ClsNet()
+        ds = ObjStream(W, H, a.exclude_styles)
     os.makedirs(a.out, exist_ok=True)
     ckpt = os.path.join(a.out, f"{a.name or a.level}.pt")
     state = None
@@ -61,6 +71,9 @@ def main():
         print(f"resuming {ckpt} from step {state['step']}")
     elif a.resume not in ("auto", "no"):
         model.load_state_dict(torch.load(a.resume, map_location="cpu")["model"])
+    if state is None and a.init_from:
+        load_partial(model, torch.load(a.init_from, map_location="cpu")["model"])
+        print(f"initialised from {a.init_from}")
     model.to(dev)
     dl = DataLoader(ds, batch_size=a.batch, num_workers=a.workers, persistent_workers=a.workers > 0)
     opt = torch.optim.AdamW(model.parameters(), lr=a.lr, weight_decay=1e-4)
@@ -75,7 +88,7 @@ def main():
     def save(step):
         tmp = ckpt + ".tmp"
         torch.save(dict(model=model.state_dict(), opt=opt.state_dict(), sched=sched.state_dict(),
-                        level=a.level, base=a.base, size=[W, H], exclude=a.exclude_styles,
+                        level=a.level, base=a.base, size=[W, H], exclude=a.exclude_styles, v3=v3,
                         step=step, steps=a.steps), tmp)
         os.replace(tmp, ckpt)            # never leave a half-written checkpoint behind
 
@@ -85,11 +98,14 @@ def main():
         batch = [t.to(dev, non_blocking=True) for t in batch]
         with torch.autocast(dev, enabled=dev == "cuda"):
             if a.level == "seg":
-                img, inside, edge, edge_w = batch
-                loss = seg_loss(model(img).float(), inside, edge, edge_w)
-            else:
+                img, inside, edge, edge_w, text = batch
+                loss = seg_loss(model(img).float(), inside, edge, edge_w, text if v3 else None)
+            elif a.level == "group" and not v3:
                 x, geo, y = batch
                 loss = torch.nn.functional.binary_cross_entropy_with_logits(model(x, geo).float(), y)
+            else:
+                x, geo, y = batch
+                loss = torch.nn.functional.cross_entropy(model(x, geo).float(), y)
         opt.zero_grad(set_to_none=True)
         scaler.scale(loss).backward()
         scaler.step(opt)
@@ -103,6 +119,20 @@ def main():
         if step >= a.steps:
             break
     print("saved", ckpt)
+
+
+def load_partial(model, sd):
+    """Copy weights by name; for a tensor whose shape changed, copy the overlapping slice."""
+    own = model.state_dict()
+    for k, v in sd.items():
+        if k not in own:
+            continue
+        if own[k].shape == v.shape:
+            own[k] = v
+        elif own[k].dim() == v.dim():
+            sl = tuple(slice(0, min(a, b)) for a, b in zip(own[k].shape, v.shape))
+            own[k][sl] = v[sl]
+    model.load_state_dict(own)
 
 
 if __name__ == "__main__":
