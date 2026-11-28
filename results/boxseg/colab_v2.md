@@ -45,3 +45,27 @@ Recall@0.5 by style (a box can have several styles):
 | nested-box recall (header, inner, badge, icon circle, stacked) | 0.30 | 0.67 |
 | top-level box recall | 0.96 | 0.94 |
 | P / R / F1 | 0.88 / 0.74 / 0.80 | 0.81 / 0.85 / 0.83 |
+
+## Held-out styles (the main generalisation test)
+Model `seg_no_hand` was trained with the same settings but never saw hand-drawn outlines or sticky
+notes. Both models are tested only on boxes that are hand-drawn or sticky (300 scenes, 561 boxes).
+
+| model | R@0.5 | R@0.75 | hand R@0.5 | sticky R@0.5 |
+|---|---|---|---|---|
+| full (saw all styles) | 0.919 | 0.820 | 0.908 | 1.000 |
+| **held out (never saw hand / sticky)** | **0.908** | **0.805** | **0.896** | **1.000** |
+| contours | 0.614 | 0.480 | 0.627 | 0.489 |
+
+Recall drops by about one point when the style is never seen, so the U-Net detects these
+boxes from their closed shape, not from having learned the style.
+Precision is not meaningful in this table: false positives are counted over all boxes in the
+scene while true positives only count the hand/sticky ones.
+
+## Real NotebookLM slides (first look, no labels yet)
+`pred_real/` on Drive. Observations from a few slides:
+- the inside map finds closed regions well on unseen real styles (neon HUD frames, sticky notes,
+  table cells, gauges);
+- boundaries between touching cells (tables, grids) are weak, so neighbouring cells often merge
+  into one large box: the generator has no tables/grids of touching cells yet;
+- illustrations and photos (spine drawing, gauge pictures) are also marked as regions, since
+  the generator draws no pictures or icons yet.
