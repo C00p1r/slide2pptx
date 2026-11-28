@@ -93,7 +93,7 @@ OBJ_CLASSES = ["title", "text", "shape", "picture", "icon"]   # same ids as the 
 class ClsNet(nn.Module):
     """Object classifier with context.
 
-    Input: a crop 2.5x the size of the object (so it sees the neighbours: is this circle part
+    Input: a crop 2x the size of the object (so it sees the neighbours: is this circle part
     of an icon, is this block of text the slide title?), resized to S x S, with 4 channels:
     RGB + the object's mask. Plus 6 geometry numbers (size and position on the slide).
     """

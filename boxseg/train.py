@@ -92,6 +92,7 @@ def main():
                         step=step, steps=a.steps), tmp)
         os.replace(tmp, ckpt)            # never leave a half-written checkpoint behind
 
+    cls_w = None    # class balance for the object CNN comes from ObjStream's per-class sampling
     model.train()
     t0, run = time.time(), 0.0
     for step, batch in enumerate(dl, start + 1):
@@ -105,7 +106,7 @@ def main():
                 loss = torch.nn.functional.binary_cross_entropy_with_logits(model(x, geo).float(), y)
             else:
                 x, geo, y = batch
-                loss = torch.nn.functional.cross_entropy(model(x, geo).float(), y)
+                loss = torch.nn.functional.cross_entropy(model(x, geo).float(), y, weight=cls_w)
         opt.zero_grad(set_to_none=True)
         scaler.scale(loss).backward()
         scaler.step(opt)

@@ -134,11 +134,12 @@ class PairStream(IterableDataset):
 
 # ------------------------------------------------------------------ object classifier
 
-OBJ_SIZE = 64
+OBJ_SIZE = 96
 
 
-def obj_input(img, box, size=OBJ_SIZE, ctx=2.5):
-    """4-channel context crop (RGB + object mask), ctx times the object's size, + 6 geometry numbers."""
+def obj_input(img, box, size=OBJ_SIZE, ctx=2.0):
+    """4-channel context crop (RGB + object mask), ctx times the object's size, + 6 geometry numbers.
+    96 px so that the object itself still covers ~48 px: textures (photo vs flat fill) stay visible."""
     H, W = img.shape[:2]
     x0, y0, x1, y1 = [float(v) for v in box[:4]]
     cx, cy = (x0 + x1) / 2, (y0 + y1) / 2
@@ -182,9 +183,10 @@ class ObjStream(IterableDataset):
             by = {}
             for o in obs:
                 by.setdefault(o[1], []).append(o)
-            pick = []                                     # balance classes (text is very common)
+            pick = []                     # same count per class present (rare classes repeat, with new jitter)
             for lst in by.values():
-                pick += [lst[i] for i in rng.choice(len(lst), min(len(lst), max(1, self.k // len(by))), replace=False)]
+                k = max(1, self.k // len(by))
+                pick += [lst[i] for i in rng.choice(len(lst), k, replace=len(lst) < k)]
             for box, c in pick:
                 x, geo = obj_input(s["image"], jitter(rng, box, 0.05))
                 yield torch.from_numpy(x), torch.from_numpy(geo), torch.tensor(c)
